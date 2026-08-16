@@ -62,6 +62,7 @@ async def list_activities(
                 "type": a.type,
                 "sport_type": a.sport_type,
                 "start_date": a.start_date.isoformat(),
+                "start_date_local": a.start_date_local.isoformat(),
                 "moving_time": a.moving_time,
                 "distance": a.distance,
                 "total_elevation_gain": a.total_elevation_gain,
@@ -95,6 +96,18 @@ async def get_activity(activity_id: int, db: Session = Depends(get_db)):
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
     
+    # Get computed metrics
+    from models.computed_metric import ComputedMetric
+    computed_metrics = db.query(ComputedMetric).filter(
+        ComputedMetric.activity_id == activity_id
+    ).all()
+    
+    # Get effort groups
+    from models.effort_group import EffortGroup
+    effort_groups = db.query(EffortGroup).filter(
+        EffortGroup.activity_id == activity_id
+    ).all()
+    
     return {
         "id": activity.id,
         "strava_id": activity.strava_id,
@@ -102,6 +115,7 @@ async def get_activity(activity_id: int, db: Session = Depends(get_db)):
         "type": activity.type,
         "sport_type": activity.sport_type,
         "start_date": activity.start_date.isoformat(),
+        "start_date_local": activity.start_date_local.isoformat(),
         "moving_time": activity.moving_time,
         "elapsed_time": activity.elapsed_time,
         "distance": activity.distance,
@@ -123,6 +137,23 @@ async def get_activity(activity_id: int, db: Session = Depends(get_db)):
         "effort_zone": activity.effort_zone,
         "terrain_type": activity.terrain_type,
         "route_id": activity.route_id,
+        "computed_metrics": [
+            {
+                "metric_type": m.metric_type,
+                "value": float(m.value),
+                "computed_at": m.computed_at.isoformat()
+            }
+            for m in computed_metrics
+        ],
+        "effort_groups": [
+            {
+                "group_type": g.group_type,
+                "group_label": g.group_label,
+                "group_value": g.group_value,
+                "time_in_zone": g.time_in_zone
+            }
+            for g in effort_groups
+        ],
         "created_at": activity.created_at.isoformat(),
         "updated_at": activity.updated_at.isoformat()
     }

@@ -20,6 +20,7 @@ export interface Activity {
   type: string
   sport_type: string
   start_date: string
+  start_date_local: string
   moving_time: number
   elapsed_time: number
   distance: number

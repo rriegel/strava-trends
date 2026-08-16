@@ -1,12 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
 import { getRoutes, getRoute, getRouteClusters } from '../api/routes'
+import type { RoutesResponse } from '../api/routes'
 import type { Route } from '../types'
 
 export function useRoutes(params?: {
-  limit?: number
-  offset?: number
+  page?: number
+  per_page?: number
+  sort_by?: string
+  sort_order?: string
+  min_activity_count?: number
+  start_lat?: number
+  start_lng?: number
+  radius_km?: number
 }) {
-  return useQuery<Route[]>({
+  return useQuery<RoutesResponse>({
     queryKey: ['routes', params],
     queryFn: () => getRoutes(params),
   })
