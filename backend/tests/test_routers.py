@@ -99,6 +99,32 @@ class TestActivitiesRouter:
         assert response.status_code == 404
 
 
+
+    def test_delete_activity(self, client, sample_activity):
+        """Test deleting an activity"""
+        response = client.delete(
+            f"/activities/{sample_activity.id}",
+            headers={"Authorization": f"Bearer session_{sample_activity.user_id}_1234567890"}
+        )
+        assert response.status_code == 200
+        assert response.json()["message"] == "Activity deleted successfully"
+        
+        # Verify it's gone
+        response = client.get(
+            f"/activities/{sample_activity.id}",
+            headers={"Authorization": f"Bearer session_{sample_activity.user_id}_1234567890"}
+        )
+        assert response.status_code == 404
+    
+    def test_delete_activity_not_found(self, client, sample_user):
+        """Test deleting non-existent activity"""
+        response = client.delete(
+            "/activities/99999",
+            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+        )
+        assert response.status_code == 404
+
+
 class TestUploadsRouter:
     """Test /uploads endpoints"""
     

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import FileUpload from '../FileUpload'
 import { useFileUpload } from '../../hooks/useFileUpload'
@@ -59,7 +59,6 @@ describe('FileUpload', () => {
 
     await user.upload(input, [validFile, invalidFile])
 
-    // Only the valid file should be shown
     expect(screen.getByText('run.fit')).toBeInTheDocument()
     expect(screen.queryByText('doc.pdf')).not.toBeInTheDocument()
   })
