@@ -12,7 +12,7 @@ class ActivityStream(Base):
     activity_id = Column(BIGINT, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False)
     stream_type = Column(String(50), nullable=False)  # heartrate, cadence, watts, latlng, altitude, velocity_smooth, grade_smooth
 
-    # Stream data stored as JSONB array
+    # Stream data stored as JSON array
     data = Column(JSONB, nullable=False)
 
     # Metadata

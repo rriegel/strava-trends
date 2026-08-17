@@ -155,7 +155,7 @@ async def get_activity(activity_id: int, db: Session = Depends(get_db)):
             for g in effort_groups
         ],
         "created_at": activity.created_at.isoformat(),
-        "updated_at": activity.updated_at.isoformat()
+        "updated_at": activity.updated_at.isoformat() if activity.updated_at else None
     }
 
 @router.get("/{activity_id}/streams")
