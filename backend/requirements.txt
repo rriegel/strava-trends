@@ -28,3 +28,7 @@ pydantic-settings==2.5.2
 # Utilities
 python-dateutil==2.9.0
 polyline==2.0.2
+
+# File parsing for activity uploads
+fitparse==1.2.0
+gpxpy==1.6.1

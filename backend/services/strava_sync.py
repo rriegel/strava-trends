@@ -92,6 +92,8 @@ class StravaSyncService:
     def _map_activity_fields(self, data: Dict) -> Dict:
         """Map Strava API fields to database fields"""
         return {
+            "source": "strava",
+            "source_id": str(data['id']),
             "strava_id": data['id'],
             "name": data.get('name'),
             "type": data.get('type'),

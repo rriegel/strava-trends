@@ -10,6 +10,39 @@ from datetime import datetime, timedelta
 router = APIRouter()
 security = HTTPBearer()
 
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> User:
+    """Get current authenticated user from session token"""
+    # TODO: Validate session token properly (JWT in production)
+    # For now, extract user_id from token format: session_{user_id}_{timestamp}
+    token = credentials.credentials
+    
+    if not token.startswith("session_"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token format"
+        )
+    
+    try:
+        parts = token.split("_")
+        user_id = int(parts[1])
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+        
+        return user
+    except (IndexError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+
 @router.post("/strava/callback")
 async def strava_callback(code: str, db: Session = Depends(get_db)):
     """Handle Strava OAuth callback"""

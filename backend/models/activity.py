@@ -9,7 +9,11 @@ class Activity(Base):
 
     id = Column(BIGINT, primary_key=True, index=True)
     user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    strava_id = Column(BIGINT, nullable=False)
+    
+    # Source tracking (source-agnostic design)
+    source = Column(String(50), nullable=False, default="strava")  # strava, file_upload, garmin, etc.
+    source_id = Column(String(255), nullable=True)  # strava_id, filename, or external ID
+    strava_id = Column(BIGINT, nullable=True)  # Kept for backward compatibility, nullable now
 
     # Basic info
     name = Column(String(255), nullable=False)
@@ -65,10 +69,11 @@ class Activity(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("user_id", "strava_id", name="uq_activities_user_strava"),
+        UniqueConstraint("user_id", "source", "source_id", name="uq_activities_user_source_id"),
         Index("ix_activities_user_id_type_start_date", "user_id", "type", "start_date"),
         Index("ix_activities_user_id_start_date_local", "user_id", "start_date_local"),
         Index("ix_activities_user_id_distance_bucket", "user_id", "distance_bucket"),
         Index("ix_activities_user_id_effort_zone", "user_id", "effort_zone"),
         Index("ix_activities_user_id_route_id", "user_id", "route_id"),
+        Index("ix_activities_user_id_source", "user_id", "source"),
     )
