@@ -61,7 +61,7 @@ docker run -d --name strava-trends-db \
 cd backend
 
 # Create virtual environment
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Install dependencies
