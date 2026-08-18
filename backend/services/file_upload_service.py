@@ -251,7 +251,7 @@ class FileUploadService:
         
         # Step 2: Hysteresis/peak detection
         # Only count elevation gain when we climb above a valley by a threshold
-        MIN_GAIN_THRESHOLD = 3.0  # meters - minimum climb to count as real elevation gain
+        MIN_GAIN_THRESHOLD = 2.0  # meters - minimum climb to count as real elevation gain
         
         total_gain = 0.0
         valley = smoothed[0]  # Track the lowest point since last peak
