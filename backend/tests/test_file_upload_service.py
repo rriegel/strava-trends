@@ -191,3 +191,199 @@ class TestTCXParsing:
         
         with pytest.raises(ValueError, match="No Activity found"):
             service._parse_tcx(tcx_content)
+
+
+class TestGPXParsingImprovements:
+    """Test improved GPX parsing with GPS noise filtering"""
+    
+    def test_gpx_elevation_hysteresis(self, db_session):
+        """Test that elevation gain uses hysteresis/peak detection with 2m threshold"""
+        service = FileUploadService(db_session)
+        
+        # GPX with clear elevation changes that exceed 2m threshold
+        # Using more points to avoid moving average flattening
+        gpx_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+      <trkpt lat="40.0" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:00:30Z</time>
+      </trkpt>
+      <trkpt lat="40.002" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:01:00Z</time>
+      </trkpt>
+      <trkpt lat="40.003" lon="-105.0">
+        <ele>103</ele>
+        <time>2024-01-15T08:01:30Z</time>
+      </trkpt>
+      <trkpt lat="40.004" lon="-105.0">
+        <ele>105</ele>
+        <time>2024-01-15T08:02:00Z</time>
+      </trkpt>
+      <trkpt lat="40.005" lon="-105.0">
+        <ele>105</ele>
+        <time>2024-01-15T08:02:30Z</time>
+      </trkpt>
+      <trkpt lat="40.006" lon="-105.0">
+        <ele>105</ele>
+        <time>2024-01-15T08:03:00Z</time>
+      </trkpt>
+      <trkpt lat="40.007" lon="-105.0">
+        <ele>108</ele>
+        <time>2024-01-15T08:03:30Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        
+        result = service._parse_gpx(gpx_content)
+        
+        # Elevation profile: 100 -> 100 -> 100 -> 103 -> 105 -> 105 -> 105 -> 108
+        # Valley starts at 100
+        # At 103: 103 >= 100 + 2, count 3m gain, valley = 103
+        # At 105: 105 >= 103 + 2, count 2m gain, valley = 105
+        # At 108: 108 >= 105 + 2, count 3m gain, valley = 108
+        # Total: 8m (but moving average will smooth this, so expect close to 8m)
+        assert result["total_elevation_gain"] > 5.0
+        assert result["total_elevation_gain"] < 10.0
+    
+    def test_gpx_moving_time_excludes_stationary(self, db_session):
+        """Test that stationary periods are excluded from moving time"""
+        service = FileUploadService(db_session)
+        
+        # GPX with stationary period (no distance, but time passes)
+        gpx_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+      <trkpt lat="40.0" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:01:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:02:00Z</time>
+      </trkpt>
+      <trkpt lat="40.002" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:03:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        
+        result = service._parse_gpx(gpx_content)
+        
+        # Total elapsed time: 3 minutes (180 seconds)
+        assert result["elapsed_time"] == 180
+        
+        # Moving time should exclude the stationary minute (point 2 to point 3)
+        # Only points 1->2 and 3->4 have movement
+        assert result["moving_time"] < result["elapsed_time"]
+        assert result["moving_time"] == 120  # 2 minutes of movement
+    
+    def test_gpx_uses_2d_distance(self, db_session):
+        """Test that distance calculation uses 2D (horizontal) distance"""
+        service = FileUploadService(db_session)
+        
+        # GPX with elevation change but same horizontal distance
+        gpx_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+      <trkpt lat="40.0" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>200</ele>
+        <time>2024-01-15T08:01:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        
+        result = service._parse_gpx(gpx_content)
+        
+        # Distance should be horizontal only (~111m for 0.001 degrees latitude)
+        # Not affected by the 100m elevation difference
+        assert result["distance"] > 100
+        assert result["distance"] < 150
+    
+    def test_gpx_calculates_max_speed(self, db_session):
+        """Test that max speed is calculated from actual speeds, not estimated"""
+        service = FileUploadService(db_session)
+        
+        # GPX with varying speeds
+        gpx_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+      <trkpt lat="40.0" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:01:00Z</time>
+      </trkpt>
+      <trkpt lat="40.003" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:02:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        
+        result = service._parse_gpx(gpx_content)
+        
+        # Point 1->2: ~111m in 60s = ~1.85 m/s
+        # Point 2->3: ~222m in 60s = ~3.7 m/s (faster)
+        # Max speed should be the faster segment
+        assert result["max_speed"] > 3.0
+        assert result["max_speed"] < 4.0
+
+    
+    def test_calculate_elevation_gain_hysteresis(self, db_session):
+        """Test the hysteresis elevation gain calculation directly"""
+        service = FileUploadService(db_session)
+        
+        # Test case 1: Clear climb exceeding threshold
+        points = [100, 100, 100, 103, 105, 105, 105, 108]
+        gain = service._calculate_elevation_gain(points, window=3)
+        # Should count: 3m (100->103) + 2m (103->105) + 3m (105->108) = 8m
+        assert gain > 5.0
+        assert gain < 10.0
+        
+        # Test case 2: Small fluctuations below threshold should be filtered
+        points = [100, 101, 100, 101, 100]
+        gain = service._calculate_elevation_gain(points, window=3)
+        # All changes are < 2m, should be filtered out
+        assert gain < 2.0
+        
+        # Test case 3: Climb then descent then climb
+        points = [100, 100, 100, 105, 105, 100, 100, 104]
+        gain = service._calculate_elevation_gain(points, window=3)
+        # First climb: 5m (100->105), then descent to 100, then climb 4m (100->104)
+        # Total should be around 9m
+        assert gain > 7.0
+        assert gain < 11.0
+        
+        # Test case 4: Empty and single point
+        assert service._calculate_elevation_gain([], window=5) == 0.0
+        assert service._calculate_elevation_gain([100], window=5) == 0.0
+

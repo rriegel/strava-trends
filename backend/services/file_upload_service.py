@@ -147,27 +147,53 @@ class FileUploadService:
         
         track = gpx.tracks[0]
         
-        # Calculate summary stats
+        # Calculate summary stats with improved accuracy
         total_distance = 0
-        total_elevation = 0
-        total_time = 0
+        moving_time = 0
+        elapsed_time = 0
+        max_speed = 0
         hr_values = []
         cadence_values = []
+        elevation_points = []  # Collect for moving average smoothing
+        
+        # Thresholds for filtering GPS noise
+        SPEED_THRESHOLD = 0.5  # m/s - consider stationary below this speed
+        ELEVATION_WINDOW = 5  # Moving average window size for elevation smoothing
         
         for segment in track.segments:
             for i, point in enumerate(segment.points):
+                # Collect elevation data for smoothing
+                if point.elevation is not None:
+                    elevation_points.append(point.elevation)
+                
                 if i > 0 and segment.points[i-1]:
                     prev = segment.points[i-1]
-                    total_distance += point.distance_3d(prev) or point.distance_2d(prev) or 0
-                    if point.elevation and prev.elevation and point.elevation > prev.elevation:
-                        total_elevation += point.elevation - prev.elevation
+                    
+                    # Distance: use 2D (horizontal only) to avoid GPS elevation noise
+                    distance = point.distance_2d(prev) or 0
+                    total_distance += distance
+                    
+                    # Time and speed calculations
                     if point.time and prev.time:
-                        total_time += (point.time - prev.time).total_seconds()
+                        time_diff = (point.time - prev.time).total_seconds()
+                        elapsed_time += time_diff
+                        
+                        # Calculate speed and determine if moving
+                        if time_diff > 0 and distance > 0:
+                            speed = distance / time_diff
+                            max_speed = max(max_speed, speed)
+                            
+                            # Only count time if speed exceeds threshold (moving)
+                            if speed >= SPEED_THRESHOLD:
+                                moving_time += time_diff
                 
                 # Extract HR/cadence from extensions if present
                 if point.extensions:
                     # GPX extensions vary by device; this is a simplified extraction
                     pass
+        
+        # Apply moving average smoothing to elevation data to reduce GPS noise
+        total_elevation = self._calculate_elevation_gain(elevation_points, ELEVATION_WINDOW)
         
         # Get start/end time
         start_time = None
@@ -176,7 +202,7 @@ class FileUploadService:
                 start_time = segment.points[0].time
                 break
         
-        avg_speed = total_distance / total_time if total_time > 0 else 0
+        avg_speed = total_distance / moving_time if moving_time > 0 else 0
         
         data = {
             "name": track.name or "GPX Activity",
@@ -184,12 +210,12 @@ class FileUploadService:
             "sport_type": None,
             "start_date": start_time,
             "start_date_local": start_time,
-            "moving_time": int(total_time),
-            "elapsed_time": int(total_time),
+            "moving_time": int(moving_time),
+            "elapsed_time": int(elapsed_time),
             "distance": total_distance,
             "total_elevation_gain": total_elevation,
             "average_speed": avg_speed,
-            "max_speed": avg_speed * 1.2,  # Estimate
+            "max_speed": max_speed,
             "average_heartrate": sum(hr_values) / len(hr_values) if hr_values else None,
             "max_heartrate": max(hr_values) if hr_values else None,
             "has_heartrate": len(hr_values) > 0,
@@ -197,6 +223,51 @@ class FileUploadService:
         }
         
         return self._clean_activity_data(data)
+    
+    def _calculate_elevation_gain(self, elevation_points: list, window: int = 5) -> float:
+        """Calculate elevation gain using hysteresis/peak detection to reduce GPS noise.
+        
+        This approach tracks elevation peaks and only counts gain when climbing
+        above a previous low point by a meaningful threshold, reducing false
+        positives from GPS drift.
+        
+        Args:
+            elevation_points: List of elevation values in order
+            window: Moving average window size for initial smoothing (default 5)
+        
+        Returns:
+            Total elevation gain in meters
+        """
+        if len(elevation_points) < 2:
+            return 0.0
+        
+        # Step 1: Apply moving average smoothing to reduce high-frequency noise
+        smoothed = []
+        for i in range(len(elevation_points)):
+            start = max(0, i - window // 2)
+            end = min(len(elevation_points), i + window // 2 + 1)
+            window_points = elevation_points[start:end]
+            smoothed.append(sum(window_points) / len(window_points))
+        
+        # Step 2: Hysteresis/peak detection
+        # Only count elevation gain when we climb above a valley by a threshold
+        MIN_GAIN_THRESHOLD = 2.0  # meters - minimum climb to count as real elevation gain
+        
+        total_gain = 0.0
+        valley = smoothed[0]  # Track the lowest point since last peak
+        
+        for i in range(1, len(smoothed)):
+            current = smoothed[i]
+            
+            # If we've climbed above the valley by the threshold, count the gain
+            if current >= valley + MIN_GAIN_THRESHOLD:
+                total_gain += (current - valley)
+                valley = current  # Reset valley to current peak
+            elif current < valley:
+                # We're descending, update the valley
+                valley = current
+        
+        return total_gain
     
     def _parse_tcx(self, file_content: bytes) -> Dict:
         """Parse TCX file using xml.etree (TCX is XML-based)"""
