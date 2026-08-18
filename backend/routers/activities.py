@@ -8,6 +8,24 @@ from models.activity_stream import ActivityStream
 
 router = APIRouter()
 
+
+@router.post("/sync")
+async def sync_strava_activities(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Manually trigger Strava activity sync"""
+    try:
+        sync_service = StravaSyncService(db)
+        result = await sync_service.sync_user_activities(current_user.id)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Sync failed: {str(e)}"
+        )
+
+
 @router.get("/")
 async def list_activities(
     type: Optional[str] = None,

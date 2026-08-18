@@ -6,9 +6,46 @@ from models.user import User
 from config import settings
 import httpx
 from datetime import datetime, timedelta
+import urllib.parse
 
 router = APIRouter()
 security = HTTPBearer()
+
+
+async def refresh_strava_token(user: User, db: Session) -> str:
+    """Refresh expired Strava access token"""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://www.strava.com/api/v3/oauth/token",
+            data={
+                "client_id": settings.strava_client_id,
+                "client_secret": settings.strava_client_secret,
+                "refresh_token": user.refresh_token,
+                "grant_type": "refresh_token"
+            }
+        )
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Failed to refresh Strava token"
+            )
+        
+        token_data = response.json()
+    
+    # Update user tokens
+    user.access_token = token_data['access_token']
+    user.refresh_token = token_data['refresh_token']
+    user.token_expires_at = datetime.fromtimestamp(token_data['expires_at'])
+    db.commit()
+    
+    return user.access_token
+
+async def get_valid_strava_token(user: User, db: Session) -> str:
+    """Get valid Strava access token, refreshing if needed"""
+    if datetime.now() >= user.token_expires_at - timedelta(minutes=5):
+        return await refresh_strava_token(user, db)
+    return user.access_token
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -42,6 +79,20 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"
         )
+
+
+@router.get("/strava/connect")
+async def strava_connect():
+    """Generate Strava OAuth authorization URL"""
+    params = {
+        "client_id": settings.strava_client_id,
+        "redirect_uri": settings.strava_redirect_uri,
+        "response_type": "code",
+        "scope": "read,activity:read_all,profile:read_all",
+        "approval_prompt": "auto"
+    }
+    auth_url = f"https://www.strava.com/oauth/authorize?{urllib.parse.urlencode(params)}"
+    return {"authorization_url": auth_url}
 
 @router.post("/strava/callback")
 async def strava_callback(code: str, db: Session = Depends(get_db)):

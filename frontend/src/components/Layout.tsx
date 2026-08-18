@@ -1,5 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { cn } from '../utils/classnames'
+import StravaConnect from './StravaConnect'
+import SyncButton from './SyncButton'
 
 const navItems = [
   { path: '/', label: 'Dashboard' },
@@ -37,6 +39,10 @@ export default function Layout() {
                 ))}
               </div>
             </div>
+              <div className="flex items-center gap-3">
+                <StravaConnect />
+                <SyncButton />
+              </div>
           </div>
         </div>
       </nav>
