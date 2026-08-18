@@ -137,6 +137,7 @@ async def get_activity(activity_id: int, db: Session = Depends(get_db)):
         "effort_zone": activity.effort_zone,
         "terrain_type": activity.terrain_type,
         "route_id": activity.route_id,
+        "has_streams": activity.has_streams,
         "computed_metrics": [
             {
                 "metric_type": m.metric_type,
