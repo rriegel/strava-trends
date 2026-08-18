@@ -147,22 +147,47 @@ class FileUploadService:
         
         track = gpx.tracks[0]
         
-        # Calculate summary stats
+        # Calculate summary stats with improved accuracy
         total_distance = 0
         total_elevation = 0
-        total_time = 0
+        moving_time = 0
+        elapsed_time = 0
+        max_speed = 0
         hr_values = []
         cadence_values = []
+        
+        # Thresholds for filtering GPS noise
+        ELEVATION_THRESHOLD = 3.0  # meters - ignore gains < 3m (GPS noise)
+        SPEED_THRESHOLD = 0.5  # m/s - consider stationary below this speed
         
         for segment in track.segments:
             for i, point in enumerate(segment.points):
                 if i > 0 and segment.points[i-1]:
                     prev = segment.points[i-1]
-                    total_distance += point.distance_3d(prev) or point.distance_2d(prev) or 0
-                    if point.elevation and prev.elevation and point.elevation > prev.elevation:
-                        total_elevation += point.elevation - prev.elevation
+                    
+                    # Distance: use 2D (horizontal only) to avoid GPS elevation noise
+                    distance = point.distance_2d(prev) or 0
+                    total_distance += distance
+                    
+                    # Elevation: apply threshold to filter GPS noise
+                    if point.elevation and prev.elevation:
+                        elevation_diff = point.elevation - prev.elevation
+                        if elevation_diff > ELEVATION_THRESHOLD:
+                            total_elevation += elevation_diff
+                    
+                    # Time and speed calculations
                     if point.time and prev.time:
-                        total_time += (point.time - prev.time).total_seconds()
+                        time_diff = (point.time - prev.time).total_seconds()
+                        elapsed_time += time_diff
+                        
+                        # Calculate speed and determine if moving
+                        if time_diff > 0 and distance > 0:
+                            speed = distance / time_diff
+                            max_speed = max(max_speed, speed)
+                            
+                            # Only count time if speed exceeds threshold (moving)
+                            if speed >= SPEED_THRESHOLD:
+                                moving_time += time_diff
                 
                 # Extract HR/cadence from extensions if present
                 if point.extensions:
@@ -176,7 +201,7 @@ class FileUploadService:
                 start_time = segment.points[0].time
                 break
         
-        avg_speed = total_distance / total_time if total_time > 0 else 0
+        avg_speed = total_distance / moving_time if moving_time > 0 else 0
         
         data = {
             "name": track.name or "GPX Activity",
@@ -184,12 +209,12 @@ class FileUploadService:
             "sport_type": None,
             "start_date": start_time,
             "start_date_local": start_time,
-            "moving_time": int(total_time),
-            "elapsed_time": int(total_time),
+            "moving_time": int(moving_time),
+            "elapsed_time": int(elapsed_time),
             "distance": total_distance,
             "total_elevation_gain": total_elevation,
             "average_speed": avg_speed,
-            "max_speed": avg_speed * 1.2,  # Estimate
+            "max_speed": max_speed,
             "average_heartrate": sum(hr_values) / len(hr_values) if hr_values else None,
             "max_heartrate": max(hr_values) if hr_values else None,
             "has_heartrate": len(hr_values) > 0,
@@ -197,7 +222,8 @@ class FileUploadService:
         }
         
         return self._clean_activity_data(data)
-    
+
+
     def _parse_tcx(self, file_content: bytes) -> Dict:
         """Parse TCX file using xml.etree (TCX is XML-based)"""
         import xml.etree.ElementTree as ET

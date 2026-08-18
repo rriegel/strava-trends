@@ -191,3 +191,141 @@ class TestTCXParsing:
         
         with pytest.raises(ValueError, match="No Activity found"):
             service._parse_tcx(tcx_content)
+
+
+class TestGPXParsingImprovements:
+    """Test improved GPX parsing with GPS noise filtering"""
+    
+    def test_gpx_elevation_threshold_filtering(self, db_session):
+        """Test that small elevation changes (< 3m) are filtered as GPS noise"""
+        service = FileUploadService(db_session)
+        
+        # GPX with elevation changes: 100 -> 102 (2m, should be filtered) -> 106 (4m, should count)
+        gpx_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+      <trkpt lat="40.0" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>102</ele>
+        <time>2024-01-15T08:01:00Z</time>
+      </trkpt>
+      <trkpt lat="40.002" lon="-105.0">
+        <ele>106</ele>
+        <time>2024-01-15T08:02:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        
+        result = service._parse_gpx(gpx_content)
+        
+        # Should only count the 4m gain (106 - 102), not the 2m gain (102 - 100)
+        assert result["total_elevation_gain"] == 4.0
+    
+    def test_gpx_moving_time_excludes_stationary(self, db_session):
+        """Test that stationary periods are excluded from moving time"""
+        service = FileUploadService(db_session)
+        
+        # GPX with stationary period (no distance, but time passes)
+        gpx_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+      <trkpt lat="40.0" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:01:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:02:00Z</time>
+      </trkpt>
+      <trkpt lat="40.002" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:03:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        
+        result = service._parse_gpx(gpx_content)
+        
+        # Total elapsed time: 3 minutes (180 seconds)
+        assert result["elapsed_time"] == 180
+        
+        # Moving time should exclude the stationary minute (point 2 to point 3)
+        # Only points 1->2 and 3->4 have movement
+        assert result["moving_time"] < result["elapsed_time"]
+        assert result["moving_time"] == 120  # 2 minutes of movement
+    
+    def test_gpx_uses_2d_distance(self, db_session):
+        """Test that distance calculation uses 2D (horizontal) distance"""
+        service = FileUploadService(db_session)
+        
+        # GPX with elevation change but same horizontal distance
+        gpx_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+      <trkpt lat="40.0" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>200</ele>
+        <time>2024-01-15T08:01:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        
+        result = service._parse_gpx(gpx_content)
+        
+        # Distance should be horizontal only (~111m for 0.001 degrees latitude)
+        # Not affected by the 100m elevation difference
+        assert result["distance"] > 100
+        assert result["distance"] < 150
+    
+    def test_gpx_calculates_max_speed(self, db_session):
+        """Test that max speed is calculated from actual speeds, not estimated"""
+        service = FileUploadService(db_session)
+        
+        # GPX with varying speeds
+        gpx_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+      <trkpt lat="40.0" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.001" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:01:00Z</time>
+      </trkpt>
+      <trkpt lat="40.003" lon="-105.0">
+        <ele>100</ele>
+        <time>2024-01-15T08:02:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        
+        result = service._parse_gpx(gpx_content)
+        
+        # Point 1->2: ~111m in 60s = ~1.85 m/s
+        # Point 2->3: ~222m in 60s = ~3.7 m/s (faster)
+        # Max speed should be the faster segment
+        assert result["max_speed"] > 3.0
+        assert result["max_speed"] < 4.0
