@@ -387,3 +387,66 @@ class TestGPXParsingImprovements:
         assert service._calculate_elevation_gain([], window=5) == 0.0
         assert service._calculate_elevation_gain([100], window=5) == 0.0
 
+
+    def test_gpx_extracts_and_saves_streams(self, db_session, sample_user):
+        """Test that GPX upload extracts latlng and altitude streams"""
+        from services.file_upload_service import FileUploadService
+        from models.activity_stream import ActivityStream
+        
+        gpx_content = """<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Test">
+  <trk>
+    <name>Test Run</name>
+    <trkseg>
+      <trkpt lat="40.7128" lon="-74.0060">
+        <ele>10.0</ele>
+        <time>2026-01-15T10:00:00Z</time>
+      </trkpt>
+      <trkpt lat="40.7129" lon="-74.0061">
+        <ele>11.0</ele>
+        <time>2026-01-15T10:01:00Z</time>
+      </trkpt>
+      <trkpt lat="40.7130" lon="-74.0062">
+        <ele>12.0</ele>
+        <time>2026-01-15T10:02:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.gpx', delete=False) as f:
+            f.write(gpx_content)
+            temp_path = f.name
+        
+        try:
+            service = FileUploadService(db_session)
+            activity = service.process_file(temp_path, sample_user.id)
+            
+            # Check that streams were saved
+            streams = db_session.query(ActivityStream).filter(
+                ActivityStream.activity_id == activity.id
+            ).all()
+            
+            assert len(streams) >= 2  # At least latlng and altitude
+            
+            stream_types = [s.stream_type for s in streams]
+            assert 'latlng' in stream_types
+            assert 'altitude' in stream_types
+            
+            # Verify latlng data
+            latlng_stream = next(s for s in streams if s.stream_type == 'latlng')
+            assert len(latlng_stream.data) == 3
+            assert latlng_stream.data[0] == [40.7128, -74.0060]
+            
+            # Verify altitude data
+            altitude_stream = next(s for s in streams if s.stream_type == 'altitude')
+            assert len(altitude_stream.data) == 3
+            assert altitude_stream.data[0] == 10.0
+            
+            # Verify activity has_streams flag is set
+            assert activity.has_streams is True
+        finally:
+            os.unlink(temp_path)
