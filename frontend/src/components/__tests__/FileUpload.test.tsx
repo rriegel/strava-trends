@@ -1,14 +1,20 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import FileUpload from '../FileUpload'
 import { useFileUpload } from '../../hooks/useFileUpload'
+import { ToastProvider } from '../ToastProvider'
 
 vi.mock('../../hooks/useFileUpload', () => ({
   useFileUpload: vi.fn(),
 }))
 
 const mockUseFileUpload = vi.mocked(useFileUpload)
+
+// Helper to wrap component with ToastProvider
+const renderWithToast = (ui: React.ReactElement) => {
+  return render(<ToastProvider>{ui}</ToastProvider>)
+}
 
 describe('FileUpload', () => {
   const defaultMockState = {
@@ -26,19 +32,19 @@ describe('FileUpload', () => {
   })
 
   it('renders the drop zone', () => {
-    render(<FileUpload />)
+    renderWithToast(<FileUpload />)
     expect(screen.getByText(/Click to upload/i)).toBeInTheDocument()
     expect(screen.getByText(/FIT, GPX, or TCX files/i)).toBeInTheDocument()
   })
 
   it('does not show selected files section initially', () => {
-    render(<FileUpload />)
+    renderWithToast(<FileUpload />)
     expect(screen.queryByText(/file.* selected/i)).not.toBeInTheDocument()
   })
 
   it('shows selected files after file input change', async () => {
     const user = userEvent.setup()
-    render(<FileUpload />)
+    renderWithToast(<FileUpload />)
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
     const file = new File(['content'], 'activity.fit', { type: 'application/octet-stream' })
@@ -51,7 +57,7 @@ describe('FileUpload', () => {
 
   it('filters out unsupported file formats', async () => {
     const user = userEvent.setup()
-    render(<FileUpload />)
+    renderWithToast(<FileUpload />)
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
     const validFile = new File(['content'], 'run.fit', { type: 'application/octet-stream' })
@@ -59,14 +65,13 @@ describe('FileUpload', () => {
 
     await user.upload(input, [validFile, invalidFile])
 
-    // Only the valid file should be shown
     expect(screen.getByText('run.fit')).toBeInTheDocument()
     expect(screen.queryByText('doc.pdf')).not.toBeInTheDocument()
   })
 
   it('shows upload button when files are selected', async () => {
     const user = userEvent.setup()
-    render(<FileUpload />)
+    renderWithToast(<FileUpload />)
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
     const file = new File(['content'], 'activity.gpx', { type: 'application/octet-stream' })
@@ -81,7 +86,7 @@ describe('FileUpload', () => {
     const uploadFiles = vi.fn()
     mockUseFileUpload.mockReturnValue({ ...defaultMockState, uploadFiles })
 
-    render(<FileUpload />)
+    renderWithToast(<FileUpload />)
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
     const file = new File(['content'], 'activity.fit', { type: 'application/octet-stream' })
@@ -96,7 +101,7 @@ describe('FileUpload', () => {
     const user = userEvent.setup()
     mockUseFileUpload.mockReturnValue({ ...defaultMockState, isUploading: true })
 
-    render(<FileUpload />)
+    renderWithToast(<FileUpload />)
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
     const file = new File(['content'], 'activity.fit', { type: 'application/octet-stream' })
@@ -113,7 +118,7 @@ describe('FileUpload', () => {
       error: 'Network error',
     })
 
-    render(<FileUpload />)
+    renderWithToast(<FileUpload />)
 
     expect(screen.getByText('Upload failed')).toBeInTheDocument()
     expect(screen.getByText('Network error')).toBeInTheDocument()
@@ -128,7 +133,7 @@ describe('FileUpload', () => {
       ],
     })
 
-    render(<FileUpload />)
+    renderWithToast(<FileUpload />)
 
     expect(screen.getByText('Upload Results')).toBeInTheDocument()
     expect(screen.getByText('run.fit')).toBeInTheDocument()
@@ -143,7 +148,7 @@ describe('FileUpload', () => {
     const uploadFiles = vi.fn().mockResolvedValue({})
     mockUseFileUpload.mockReturnValue({ ...defaultMockState, uploadFiles })
 
-    render(<FileUpload onUploadComplete={onUploadComplete} />)
+    renderWithToast(<FileUpload onUploadComplete={onUploadComplete} />)
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
     const file = new File(['content'], 'activity.fit', { type: 'application/octet-stream' })

@@ -61,7 +61,7 @@ docker run -d --name strava-trends-db \
 cd backend
 
 # Create virtual environment
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Install dependencies
@@ -92,7 +92,7 @@ npm install
 npm run dev
 ```
 
-The frontend is available at `http://localhost:5173`.
+The frontend is available at `http://localhost:3000`.
 
 ## Environment Variables
 
@@ -105,7 +105,7 @@ The frontend is available at `http://localhost:5173`.
 | `STRAVA_CLIENT_SECRET` | Strava API OAuth client secret | — |
 | `STRAVA_REDIRECT_URI` | OAuth callback URL | `http://localhost:8000/auth/strava/callback` |
 | `SECRET_KEY` | JWT signing key | `change-this-in-production` |
-| `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:5173"]` |
+| `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:3000"]` |
 
 ## Running Tests
 

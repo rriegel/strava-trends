@@ -1,5 +1,6 @@
 import { useState, useRef, type DragEvent, type ChangeEvent } from 'react'
 import { useFileUpload } from '../hooks/useFileUpload'
+import { useToast } from './ToastProvider'
 import { cn } from '../utils/classnames'
 
 const ACCEPTED_FORMATS = ['.fit', '.gpx', '.tcx']
@@ -14,6 +15,7 @@ export default function FileUpload({ onUploadComplete }: FileUploadProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { isUploading, results, error, uploadFiles, reset } = useFileUpload()
+  const { addToast } = useToast()
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -63,10 +65,32 @@ export default function FileUpload({ onUploadComplete }: FileUploadProps) {
     if (selectedFiles.length === 0) return
 
     try {
-      await uploadFiles(selectedFiles)
+      const response = await uploadFiles(selectedFiles)
+      
+      if (response) {
+        const { success_count, duplicate_count, error_count } = response
+        
+        // Show appropriate toast based on results
+        if (success_count > 0 && duplicate_count === 0 && error_count === 0) {
+          addToast('success', `Successfully uploaded ${success_count} activit${success_count === 1 ? 'y' : 'ies'}`)
+        } else if (duplicate_count > 0 && success_count === 0 && error_count === 0) {
+          addToast('warning', `${duplicate_count} activit${duplicate_count === 1 ? 'y was' : 'ies were'} already imported`)
+        } else if (error_count > 0 && success_count === 0 && duplicate_count === 0) {
+          addToast('error', `Failed to upload ${error_count} file${error_count === 1 ? '' : 's'}`)
+        } else {
+          // Mixed results
+          const parts = []
+          if (success_count > 0) parts.push(`${success_count} succeeded`)
+          if (duplicate_count > 0) parts.push(`${duplicate_count} duplicates`)
+          if (error_count > 0) parts.push(`${error_count} failed`)
+          addToast('info', `Upload complete: ${parts.join(', ')}`)
+        }
+      }
+      
       onUploadComplete?.()
     } catch (err) {
       console.error('Upload failed:', err)
+      addToast('error', 'Upload failed. Please try again.')
     }
   }
 

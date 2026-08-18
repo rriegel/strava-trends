@@ -1,31 +1,103 @@
 import apiClient from './client'
-import type { Activity, ActivityStream, Pagination } from '../types'
+
+export interface ActivitySummary {
+  id: number
+  strava_id: number | null
+  name: string
+  type: string
+  sport_type: string | null
+  start_date: string
+  start_date_local: string
+  moving_time: number | null
+  distance: number | null
+  total_elevation_gain: number | null
+  average_speed: number | null
+  average_heartrate: number | null
+  max_heartrate: number | null
+  average_cadence: number | null
+  average_watts: number | null
+  suffer_score: number | null
+  device_name: string | null
+  distance_bucket: string | null
+  effort_zone: string | null
+  terrain_type: string | null
+  route_id: number | null
+  has_streams: boolean
+}
+
+export interface ActivityDetail extends ActivitySummary {
+  elapsed_time: number | null
+  max_speed: number | null
+  has_heartrate: boolean
+  weighted_average_watts: number | null
+  max_watts: number | null
+  kilojoules: number | null
+  gear_id: string | null
+  computed_metrics: Array<{
+    metric_type: string
+    value: number
+    computed_at: string
+  }>
+  effort_groups: Array<{
+    group_type: string
+    group_label: string
+    group_value: string
+    time_in_zone: number | null
+  }>
+  created_at: string
+  updated_at: string | null
+}
+
+export interface Pagination {
+  page: number
+  per_page: number
+  total: number
+  total_pages: number
+}
 
 export interface ActivitiesResponse {
-  activities: Activity[]
+  activities: ActivitySummary[]
   pagination: Pagination
 }
 
-export async function getActivities(params: {
-  page?: number
-  per_page?: number
+export interface ActivityFilters {
   type?: string
+  start_date?: string
+  end_date?: string
   distance_bucket?: string
   effort_zone?: string
   terrain_type?: string
-  start_date?: string
-  end_date?: string
-}): Promise<ActivitiesResponse> {
-  const response = await apiClient.get('/activities', { params })
-  return response.data
+  route_id?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+  page?: number
+  per_page?: number
 }
 
-export async function getActivity(id: number): Promise<Activity> {
-  const response = await apiClient.get(`/activities/${id}`)
-  return response.data
-}
+export const activitiesApi = {
+  async list(filters: ActivityFilters = {}): Promise<ActivitiesResponse> {
+    const params = new URLSearchParams()
+    
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        params.set(key, String(value))
+      }
+    })
+    
+    const response = await apiClient.get<ActivitiesResponse>(
+      `/activities/?${params.toString()}`
+    )
+    return response.data
+  },
 
-export async function getActivityStreams(id: number): Promise<ActivityStream[]> {
-  const response = await apiClient.get(`/activities/${id}/streams`)
-  return response.data
+  async getDetail(activityId: number): Promise<ActivityDetail> {
+    const response = await apiClient.get<ActivityDetail>(
+      `/activities/${activityId}`
+    )
+    return response.data
+  },
+
+  async delete(activityId: number): Promise<void> {
+    await apiClient.delete(`/activities/${activityId}`)
+  },
 }

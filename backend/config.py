@@ -1,13 +1,15 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
+
     # Application
     app_name: str = "Strava Trends API"
     debug: bool = False
     
     # Database
-    database_url: str = "postgresql://user:password@localhost/strava_trends"
+    database_url: str = "postgresql://user:***@localhost/strava_trends"
     
     # Strava OAuth
     strava_client_id: str = ""
@@ -24,8 +26,5 @@ class Settings(BaseSettings):
     
     # Rate limiting
     rate_limit_per_minute: int = 100
-    
-    class Config:
-        env_file = ".env"
 
 settings = Settings()

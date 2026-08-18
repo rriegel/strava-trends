@@ -158,6 +158,40 @@ async def get_activity(activity_id: int, db: Session = Depends(get_db)):
         "updated_at": activity.updated_at.isoformat() if activity.updated_at else None
     }
 
+
+@router.delete("/{activity_id}")
+async def delete_activity(
+    activity_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete an activity and its associated data"""
+    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    
+    # Delete associated streams
+    db.query(ActivityStream).filter(
+        ActivityStream.activity_id == activity_id
+    ).delete(synchronize_session=False)
+    
+    # Delete associated computed metrics
+    from models.computed_metric import ComputedMetric
+    db.query(ComputedMetric).filter(
+        ComputedMetric.activity_id == activity_id
+    ).delete(synchronize_session=False)
+    
+    # Delete associated effort groups
+    from models.effort_group import EffortGroup
+    db.query(EffortGroup).filter(
+        EffortGroup.activity_id == activity_id
+    ).delete(synchronize_session=False)
+    
+    # Delete the activity
+    db.delete(activity)
+    db.commit()
+    
+    return {"message": "Activity deleted successfully"}
+
 @router.get("/{activity_id}/streams")
 async def get_activity_streams(
     activity_id: int,

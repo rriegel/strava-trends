@@ -44,7 +44,19 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True), onupdate=sa.func.now()),
     )
 
-    # Routes table
+    # Route clusters table (without FK to routes — circular dependency)
+    op.create_table(
+        'route_clusters',
+        sa.Column('id', sa.BigInteger(), primary_key=True),
+        sa.Column('centroid_route_id', sa.BigInteger(), index=True),
+        sa.Column('route_count', sa.BigInteger(), server_default='0'),
+        sa.Column('avg_distance', sa.Numeric(10, 2)),
+        sa.Column('avg_elevation_gain', sa.Numeric(10, 2)),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), onupdate=sa.func.now()),
+    )
+
+    # Routes table (references route_clusters)
     op.create_table(
         'routes',
         sa.Column('id', sa.BigInteger(), primary_key=True),
@@ -63,16 +75,12 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True), onupdate=sa.func.now()),
     )
 
-    # Route clusters table
-    op.create_table(
-        'route_clusters',
-        sa.Column('id', sa.BigInteger(), primary_key=True),
-        sa.Column('centroid_route_id', sa.BigInteger(), sa.ForeignKey('routes.id', ondelete='SET NULL'), index=True),
-        sa.Column('route_count', sa.BigInteger(), server_default='0'),
-        sa.Column('avg_distance', sa.Numeric(10, 2)),
-        sa.Column('avg_elevation_gain', sa.Numeric(10, 2)),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), onupdate=sa.func.now()),
+    # Now add the deferred FK from route_clusters -> routes
+    op.create_foreign_key(
+        'fk_route_clusters_centroid_route_id',
+        'route_clusters', 'routes',
+        ['centroid_route_id'], ['id'],
+        ondelete='SET NULL'
     )
 
     # Activities table
@@ -80,7 +88,9 @@ def upgrade() -> None:
         'activities',
         sa.Column('id', sa.BigInteger(), primary_key=True),
         sa.Column('user_id', sa.BigInteger(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
-        sa.Column('strava_id', sa.BigInteger(), nullable=False),
+        sa.Column('source', sa.String(50), nullable=False, server_default='strava'),
+        sa.Column('source_id', sa.String(255), nullable=True),
+        sa.Column('strava_id', sa.String(255), nullable=True),
         sa.Column('name', sa.String(255), nullable=False),
         sa.Column('type', sa.String(50), nullable=False),
         sa.Column('sport_type', sa.String(50)),
@@ -110,11 +120,12 @@ def upgrade() -> None:
         sa.Column('has_streams', sa.Boolean(), server_default='false'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(timezone=True), onupdate=sa.func.now()),
-        sa.UniqueConstraint('user_id', 'strava_id', name='uq_activities_user_strava'),
+        sa.UniqueConstraint('user_id', 'source', 'source_id', name='uq_activities_user_source_id'),
     )
     op.create_index('ix_activities_user_id_type_start_date', 'activities', ['user_id', 'type', 'start_date'])
     op.create_index('ix_activities_user_id_start_date_local', 'activities', ['user_id', 'start_date_local'])
     op.create_index('ix_activities_user_id_distance_bucket', 'activities', ['user_id', 'distance_bucket'])
+    op.create_index('ix_activities_user_id_source', 'activities', ['user_id', 'source'])
     op.create_index('ix_activities_user_id_effort_zone', 'activities', ['user_id', 'effort_zone'])
     op.create_index('ix_activities_user_id_route_id', 'activities', ['user_id', 'route_id'])
 
@@ -168,6 +179,6 @@ def downgrade() -> None:
     op.drop_table('computed_metrics')
     op.drop_table('activity_streams')
     op.drop_table('activities')
-    op.drop_table('route_clusters')
     op.drop_table('routes')
+    op.drop_table('route_clusters')
     op.drop_table('users')
