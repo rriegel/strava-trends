@@ -34,14 +34,7 @@ export default function ActivityMap({ activityId, hasStreams }: ActivityMapProps
       return
     }
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/outdoors-v12',
-      center: [0, 0],
-      zoom: 1
-    })
-
-    // Fetch streams and add route
+    // Fetch streams first to get route coordinates
     const loadRoute = async () => {
       try {
         const response = await fetch(`/api/activities/${activityId}/streams?stream_types=latlng`)
@@ -59,8 +52,32 @@ export default function ActivityMap({ activityId, hasStreams }: ActivityMapProps
         // Convert [lat, lng] to [lng, lat] for Mapbox
         const coordinates = latlngStream.data.map(([lat, lng]) => [lng, lat])
         
-        // Wait for map to load
-        map.current!.on('load', () => {
+        // Calculate center and bounds before initializing map
+        const bounds = coordinates.reduce(
+          (acc, coord) => {
+            return [
+              [Math.min(acc[0][0], coord[0]), Math.min(acc[0][1], coord[1])],
+              [Math.max(acc[1][0], coord[0]), Math.max(acc[1][1], coord[1])]
+            ]
+          },
+          [[coordinates[0][0], coordinates[0][1]], [coordinates[0][0], coordinates[0][1]]]
+        )
+        
+        const center: [number, number] = [
+          (bounds[0][0] + bounds[1][0]) / 2,
+          (bounds[0][1] + bounds[1][1]) / 2
+        ]
+
+        // Initialize map already centered on the route
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/outdoors-v12',
+          center,
+          zoom: 13
+        })
+
+        // Add route when map loads
+        map.current.on('load', () => {
           // Add route as a line layer
           map.current!.addSource('route', {
             type: 'geojson',
@@ -87,20 +104,6 @@ export default function ActivityMap({ activityId, hasStreams }: ActivityMapProps
               'line-width': 4,
               'line-opacity': 0.8
             }
-          })
-
-          // Add start marker
-          map.current!.addLayer({
-            id: 'route-start',
-            type: 'circle',
-            source: 'route',
-            paint: {
-              'circle-radius': 8,
-              'circle-color': '#22c55e', // green
-              'circle-stroke-width': 2,
-              'circle-stroke-color': '#fff'
-            },
-            filter: ['==', '$type', 'Point']
           })
 
           // Add start/end points
@@ -145,10 +148,11 @@ export default function ActivityMap({ activityId, hasStreams }: ActivityMapProps
             }
           })
 
-          // Fit bounds to route
-          const bounds = new mapboxgl.LngLatBounds(coordinates[0], coordinates[0])
-          coordinates.forEach(coord => bounds.extend(coord))
-          map.current!.fitBounds(bounds, { padding: 50 })
+          // Fit bounds to route (no animation since we're already centered)
+          map.current!.fitBounds(bounds as [[number, number], [number, number]], { 
+            padding: 50,
+            animate: false
+          })
 
           setLoading(false)
         })
