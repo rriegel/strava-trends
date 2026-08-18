@@ -5,22 +5,21 @@ import os
 
 from database import get_db
 from services.file_upload_service import FileUploadService
-from routers.auth import get_current_user
-from models.user import User
 
 router = APIRouter()
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def upload_activity_file(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Upload a single activity file (FIT, GPX, or TCX).
     
     The file will be parsed and the activity will be added to the user's history.
     Duplicate detection prevents the same activity from being imported twice.
+    
+    NOTE: Auth is disabled for development. Will require user_id in production.
     """
     # Validate file size (max 50MB)
     content = await file.read()
@@ -40,10 +39,13 @@ async def upload_activity_file(
             detail=f"Unsupported file format: {ext}. Supported formats: {', '.join(FileUploadService.SUPPORTED_FORMATS)}"
         )
     
+    # Use a default dev user (user_id=1) for now
+    dev_user_id = 1
+    
     try:
         service = FileUploadService(db)
         result = await service.process_upload(
-            user_id=current_user.id,
+            user_id=dev_user_id,
             file_content=content,
             filename=filename
         )
@@ -83,15 +85,19 @@ async def upload_activity_file(
 @router.post("/batch", status_code=status.HTTP_201_CREATED)
 async def upload_multiple_files(
     files: List[UploadFile] = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Upload multiple activity files at once.
     
     Each file is processed independently. Returns results for all files.
+    
+    NOTE: Auth is disabled for development. Will require user_id in production.
     """
     results = []
+    
+    # Use a default dev user (user_id=1) for now
+    dev_user_id = 1
     
     for file in files:
         content = await file.read()
@@ -119,13 +125,13 @@ async def upload_multiple_files(
         try:
             service = FileUploadService(db)
             result = await service.process_upload(
-                user_id=current_user.id,
+                user_id=dev_user_id,
                 file_content=content,
                 filename=filename
             )
             
             results.append({
-                "filename": filename,
+                "filename": file.filename,
                 **result
             })
         
