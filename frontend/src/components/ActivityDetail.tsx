@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { activitiesApi, type ActivityDetail as ActivityDetailType } from '../api/activities'
 import { formatDistance, formatDuration, formatPace, formatElevation, formatHeartrate } from '../utils/format'
+import ActivityMap from './ActivityMap'
 
 interface ActivityDetailProps {
   activityId: number
@@ -86,6 +87,9 @@ export default function ActivityDetail({ activityId, onClose }: ActivityDetailPr
         </div>
 
         <div className="p-6 space-y-6">
+          {/* Route Map */}
+          <ActivityMap activityId={activity.id} hasStreams={activity.has_streams} />
+
           <div className="flex items-center space-x-4 text-sm text-gray-600">
             <span>{new Date(activity.start_date_local).toLocaleString()}</span>
             <span>•</span>

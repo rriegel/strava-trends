@@ -9,6 +9,7 @@ from typing import Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from models.activity import Activity
+from models.activity_stream import ActivityStream
 from models.user import User
 
 
@@ -72,6 +73,36 @@ class FileUploadService:
         self.db.add(activity)
         self.db.commit()
         self.db.refresh(activity)
+        
+        # Save latlng stream if we have route data
+        if activity_data.get('_latlng_stream'):
+            stream = ActivityStream(
+                user_id=user_id,
+                activity_id=activity.id,
+                stream_type='latlng',
+                data=activity_data['_latlng_stream'],
+                series_type='time',
+                original_size=len(activity_data['_latlng_stream'])
+            )
+            self.db.add(stream)
+            
+            # Save altitude stream too
+            if activity_data.get('_altitude_stream'):
+                alt_stream = ActivityStream(
+                    user_id=user_id,
+                    activity_id=activity.id,
+                    stream_type='altitude',
+                    data=activity_data['_altitude_stream'],
+                    series_type='time',
+                    original_size=len(activity_data['_altitude_stream'])
+                )
+                self.db.add(alt_stream)
+            
+            activity.has_streams = True
+            self.db.commit()
+        
+        # Clean internal keys before returning
+        result = {k: v for k, v in activity_data.items() if not k.startswith('_')}
         
         return {
             "status": "success",
@@ -160,11 +191,20 @@ class FileUploadService:
         SPEED_THRESHOLD = 0.5  # m/s - consider stationary below this speed
         ELEVATION_WINDOW = 5  # Moving average window size for elevation smoothing
         
+        # Collect route data for map visualization
+        latlng_stream = []
+        altitude_stream = []
+        
         for segment in track.segments:
             for i, point in enumerate(segment.points):
+                # Collect latlng for route map
+                if point.latitude is not None and point.longitude is not None:
+                    latlng_stream.append([point.latitude, point.longitude])
+                
                 # Collect elevation data for smoothing
                 if point.elevation is not None:
                     elevation_points.append(point.elevation)
+                    altitude_stream.append(point.elevation)
                 
                 if i > 0 and segment.points[i-1]:
                     prev = segment.points[i-1]
@@ -205,6 +245,8 @@ class FileUploadService:
         avg_speed = total_distance / moving_time if moving_time > 0 else 0
         
         data = {
+            "_latlng_stream": latlng_stream if latlng_stream else None,
+            "_altitude_stream": altitude_stream if altitude_stream else None,
             "name": track.name or "GPX Activity",
             "type": "Run",  # GPX doesn't always specify sport; default to Run
             "sport_type": None,
