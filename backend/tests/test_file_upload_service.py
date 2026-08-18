@@ -196,11 +196,12 @@ class TestTCXParsing:
 class TestGPXParsingImprovements:
     """Test improved GPX parsing with GPS noise filtering"""
     
-    def test_gpx_elevation_threshold_filtering(self, db_session):
-        """Test that small elevation changes (< 3m) are filtered as GPS noise"""
+    def test_gpx_elevation_hysteresis(self, db_session):
+        """Test that elevation gain uses hysteresis/peak detection with 2m threshold"""
         service = FileUploadService(db_session)
         
-        # GPX with elevation changes: 100 -> 102 (2m, should be filtered) -> 106 (4m, should count)
+        # GPX with clear elevation changes that exceed 2m threshold
+        # Using more points to avoid moving average flattening
         gpx_content = b"""<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="test">
   <trk>
@@ -211,12 +212,32 @@ class TestGPXParsingImprovements:
         <time>2024-01-15T08:00:00Z</time>
       </trkpt>
       <trkpt lat="40.001" lon="-105.0">
-        <ele>102</ele>
-        <time>2024-01-15T08:01:00Z</time>
+        <ele>100</ele>
+        <time>2024-01-15T08:00:30Z</time>
       </trkpt>
       <trkpt lat="40.002" lon="-105.0">
-        <ele>106</ele>
+        <ele>100</ele>
+        <time>2024-01-15T08:01:00Z</time>
+      </trkpt>
+      <trkpt lat="40.003" lon="-105.0">
+        <ele>103</ele>
+        <time>2024-01-15T08:01:30Z</time>
+      </trkpt>
+      <trkpt lat="40.004" lon="-105.0">
+        <ele>105</ele>
         <time>2024-01-15T08:02:00Z</time>
+      </trkpt>
+      <trkpt lat="40.005" lon="-105.0">
+        <ele>105</ele>
+        <time>2024-01-15T08:02:30Z</time>
+      </trkpt>
+      <trkpt lat="40.006" lon="-105.0">
+        <ele>105</ele>
+        <time>2024-01-15T08:03:00Z</time>
+      </trkpt>
+      <trkpt lat="40.007" lon="-105.0">
+        <ele>108</ele>
+        <time>2024-01-15T08:03:30Z</time>
       </trkpt>
     </trkseg>
   </trk>
@@ -224,8 +245,14 @@ class TestGPXParsingImprovements:
         
         result = service._parse_gpx(gpx_content)
         
-        # Should only count the 4m gain (106 - 102), not the 2m gain (102 - 100)
-        assert result["total_elevation_gain"] == 4.0
+        # Elevation profile: 100 -> 100 -> 100 -> 103 -> 105 -> 105 -> 105 -> 108
+        # Valley starts at 100
+        # At 103: 103 >= 100 + 2, count 3m gain, valley = 103
+        # At 105: 105 >= 103 + 2, count 2m gain, valley = 105
+        # At 108: 108 >= 105 + 2, count 3m gain, valley = 108
+        # Total: 8m (but moving average will smooth this, so expect close to 8m)
+        assert result["total_elevation_gain"] > 5.0
+        assert result["total_elevation_gain"] < 10.0
     
     def test_gpx_moving_time_excludes_stationary(self, db_session):
         """Test that stationary periods are excluded from moving time"""
@@ -329,3 +356,34 @@ class TestGPXParsingImprovements:
         # Max speed should be the faster segment
         assert result["max_speed"] > 3.0
         assert result["max_speed"] < 4.0
+
+    
+    def test_calculate_elevation_gain_hysteresis(self, db_session):
+        """Test the hysteresis elevation gain calculation directly"""
+        service = FileUploadService(db_session)
+        
+        # Test case 1: Clear climb exceeding threshold
+        points = [100, 100, 100, 103, 105, 105, 105, 108]
+        gain = service._calculate_elevation_gain(points, window=3)
+        # Should count: 3m (100->103) + 2m (103->105) + 3m (105->108) = 8m
+        assert gain > 5.0
+        assert gain < 10.0
+        
+        # Test case 2: Small fluctuations below threshold should be filtered
+        points = [100, 101, 100, 101, 100]
+        gain = service._calculate_elevation_gain(points, window=3)
+        # All changes are < 2m, should be filtered out
+        assert gain < 2.0
+        
+        # Test case 3: Climb then descent then climb
+        points = [100, 100, 100, 105, 105, 100, 100, 104]
+        gain = service._calculate_elevation_gain(points, window=3)
+        # First climb: 5m (100->105), then descent to 100, then climb 4m (100->104)
+        # Total should be around 9m
+        assert gain > 7.0
+        assert gain < 11.0
+        
+        # Test case 4: Empty and single point
+        assert service._calculate_elevation_gain([], window=5) == 0.0
+        assert service._calculate_elevation_gain([100], window=5) == 0.0
+
