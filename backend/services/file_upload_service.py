@@ -149,30 +149,29 @@ class FileUploadService:
         
         # Calculate summary stats with improved accuracy
         total_distance = 0
-        total_elevation = 0
         moving_time = 0
         elapsed_time = 0
         max_speed = 0
         hr_values = []
         cadence_values = []
+        elevation_points = []  # Collect for moving average smoothing
         
         # Thresholds for filtering GPS noise
         SPEED_THRESHOLD = 0.5  # m/s - consider stationary below this speed
+        ELEVATION_WINDOW = 5  # Moving average window size for elevation smoothing
         
         for segment in track.segments:
             for i, point in enumerate(segment.points):
+                # Collect elevation data for smoothing
+                if point.elevation is not None:
+                    elevation_points.append(point.elevation)
+                
                 if i > 0 and segment.points[i-1]:
                     prev = segment.points[i-1]
                     
                     # Distance: use 2D (horizontal only) to avoid GPS elevation noise
                     distance = point.distance_2d(prev) or 0
                     total_distance += distance
-                    
-                    # Elevation: sum all positive changes (includes GPS noise but shows real climbs)
-                    if point.elevation and prev.elevation:
-                        elevation_diff = point.elevation - prev.elevation
-                        if elevation_diff > 0:
-                            total_elevation += elevation_diff
                     
                     # Time and speed calculations
                     if point.time and prev.time:
@@ -192,6 +191,9 @@ class FileUploadService:
                 if point.extensions:
                     # GPX extensions vary by device; this is a simplified extraction
                     pass
+        
+        # Apply moving average smoothing to elevation data to reduce GPS noise
+        total_elevation = self._calculate_elevation_gain(elevation_points, ELEVATION_WINDOW)
         
         # Get start/end time
         start_time = None
@@ -221,8 +223,52 @@ class FileUploadService:
         }
         
         return self._clean_activity_data(data)
-
-
+    
+    def _calculate_elevation_gain(self, elevation_points: list, window: int = 5) -> float:
+        """Calculate elevation gain using hysteresis/peak detection to reduce GPS noise.
+        
+        This approach tracks elevation peaks and only counts gain when climbing
+        above a previous low point by a meaningful threshold, reducing false
+        positives from GPS drift.
+        
+        Args:
+            elevation_points: List of elevation values in order
+            window: Moving average window size for initial smoothing (default 5)
+        
+        Returns:
+            Total elevation gain in meters
+        """
+        if len(elevation_points) < 2:
+            return 0.0
+        
+        # Step 1: Apply moving average smoothing to reduce high-frequency noise
+        smoothed = []
+        for i in range(len(elevation_points)):
+            start = max(0, i - window // 2)
+            end = min(len(elevation_points), i + window // 2 + 1)
+            window_points = elevation_points[start:end]
+            smoothed.append(sum(window_points) / len(window_points))
+        
+        # Step 2: Hysteresis/peak detection
+        # Only count elevation gain when we climb above a valley by a threshold
+        MIN_GAIN_THRESHOLD = 3.0  # meters - minimum climb to count as real elevation gain
+        
+        total_gain = 0.0
+        valley = smoothed[0]  # Track the lowest point since last peak
+        
+        for i in range(1, len(smoothed)):
+            current = smoothed[i]
+            
+            # If we've climbed above the valley by the threshold, count the gain
+            if current >= valley + MIN_GAIN_THRESHOLD:
+                total_gain += (current - valley)
+                valley = current  # Reset valley to current peak
+            elif current < valley:
+                # We're descending, update the valley
+                valley = current
+        
+        return total_gain
+    
     def _parse_tcx(self, file_content: bytes) -> Dict:
         """Parse TCX file using xml.etree (TCX is XML-based)"""
         import xml.etree.ElementTree as ET
