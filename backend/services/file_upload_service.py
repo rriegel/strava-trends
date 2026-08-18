@@ -157,7 +157,6 @@ class FileUploadService:
         cadence_values = []
         
         # Thresholds for filtering GPS noise
-        ELEVATION_THRESHOLD = 1.0  # meters - ignore gains < 1m (GPS noise)
         SPEED_THRESHOLD = 0.5  # m/s - consider stationary below this speed
         
         for segment in track.segments:
@@ -169,10 +168,10 @@ class FileUploadService:
                     distance = point.distance_2d(prev) or 0
                     total_distance += distance
                     
-                    # Elevation: apply threshold to filter GPS noise
+                    # Elevation: sum all positive changes (includes GPS noise but shows real climbs)
                     if point.elevation and prev.elevation:
                         elevation_diff = point.elevation - prev.elevation
-                        if elevation_diff > ELEVATION_THRESHOLD:
+                        if elevation_diff > 0:
                             total_elevation += elevation_diff
                     
                     # Time and speed calculations
