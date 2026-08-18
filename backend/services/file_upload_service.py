@@ -63,12 +63,15 @@ class FileUploadService:
                 "activity_id": existing.id
             }
         
+        # Filter out internal keys (prefixed with _) before passing to Activity
+        activity_data_clean = {k: v for k, v in activity_data.items() if not k.startswith('_')}
+        
         # Create new activity
         activity = Activity(
             user_id=user_id,
             source="file_upload",
             source_id=source_id,
-            **activity_data
+            **activity_data_clean
         )
         self.db.add(activity)
         self.db.commit()
@@ -100,9 +103,6 @@ class FileUploadService:
             
             activity.has_streams = True
             self.db.commit()
-        
-        # Clean internal keys before returning
-        result = {k: v for k, v in activity_data.items() if not k.startswith('_')}
         
         return {
             "status": "success",
