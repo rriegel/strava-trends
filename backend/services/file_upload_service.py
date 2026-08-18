@@ -157,7 +157,7 @@ class FileUploadService:
         cadence_values = []
         
         # Thresholds for filtering GPS noise
-        ELEVATION_THRESHOLD = 3.0  # meters - ignore gains < 3m (GPS noise)
+        ELEVATION_THRESHOLD = 1.0  # meters - ignore gains < 1m (GPS noise)
         SPEED_THRESHOLD = 0.5  # m/s - consider stationary below this speed
         
         for segment in track.segments:
