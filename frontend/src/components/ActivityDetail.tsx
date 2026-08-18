@@ -30,11 +30,20 @@ export default function ActivityDetail({ activityId, onClose }: ActivityDetailPr
     fetchDetail()
   }, [activityId])
 
+  // Close on escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [onClose])
+
   if (isLoading) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
-          <div className="animate-pulse space-y-4">
+        <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] flex flex-col">
+          <div className="p-6 animate-pulse space-y-4">
             <div className="h-8 bg-gray-200 rounded w-3/4"></div>
             <div className="h-4 bg-gray-200 rounded w-1/2"></div>
             <div className="grid grid-cols-2 gap-4">
@@ -66,9 +75,16 @@ export default function ActivityDetail({ activityId, onClose }: ActivityDetailPr
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Sticky header */}
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between rounded-t-lg">
           <h2 className="text-xl font-bold text-gray-900">{activity.name}</h2>
           <button
             onClick={onClose}
@@ -86,7 +102,8 @@ export default function ActivityDetail({ activityId, onClose }: ActivityDetailPr
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        {/* Scrollable content */}
+        <div className="overflow-y-auto flex-1 p-6 space-y-6">
           {/* Route Map */}
           <ActivityMap activityId={activity.id} hasStreams={activity.has_streams} />
 
