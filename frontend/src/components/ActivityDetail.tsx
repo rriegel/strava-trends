@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { activitiesApi, type ActivityDetail as ActivityDetailType } from '../api/activities'
 import { formatDistance, formatDuration, formatPace, formatElevation, formatHeartrate } from '../utils/format'
 import ActivityMap from './ActivityMap'
+import EffortBreakdown from './EffortBreakdown'
 
 interface ActivityDetailProps {
   activityId: number
@@ -242,6 +243,8 @@ export default function ActivityDetail({ activityId, onClose }: ActivityDetailPr
               </div>
             </div>
           )}
+
+          <EffortBreakdown activityId={activity.id} hasHeartrate={activity.has_heartrate} />
 
           {activity.device_name && (
             <div className="border-t pt-4 text-sm text-gray-600">

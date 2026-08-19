@@ -16,7 +16,7 @@ from models.activity import Activity
 
 
 # Use PostgreSQL test database
-SQLALCHEMY_DATABASE_URL = "postgresql://test_user:test_password@10.0.0.46:5433/strava_trends_test"
+SQLALCHEMY_DATABASE_URL = "postgresql://test_user:test_password@localhost:5432/strava_trends_test"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -25,8 +25,12 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 @pytest.fixture(scope="function")
 def db_session():
     """Create a fresh database for each test"""
+    # Clear connection pool to avoid stale connections after table drops
+    engine.dispose()
+    
     # Drop tables in reverse dependency order to handle circular dependencies
     with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS effort_groups CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS route_clusters CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS routes CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS activity_streams CASCADE"))
@@ -45,6 +49,7 @@ def db_session():
         db.close()
         # Clean up after test
         with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS effort_groups CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS route_clusters CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS routes CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS activity_streams CASCADE"))

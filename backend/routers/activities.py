@@ -225,3 +225,45 @@ async def get_activity_streams(
             for s in streams
         }
     }
+
+@router.get("/{activity_id}/effort")
+async def get_activity_effort(
+    activity_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get effort zone breakdown for an activity"""
+    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    
+    from services.effort_classifier import EffortClassifier
+    classifier = EffortClassifier(db)
+    
+    # Get or compute effort analysis
+    effort_data = classifier.get_activity_effort(activity_id)
+    
+    if not effort_data:
+        # Try to analyze if we have HR data but haven't analyzed yet
+        effort_data = classifier.analyze_activity(activity_id)
+    
+    if not effort_data:
+        raise HTTPException(
+            status_code=404, 
+            detail="No heart rate data available for effort analysis"
+        )
+    
+    return {
+        "activity_id": activity_id,
+        "max_hr": effort_data['max_hr'],
+        "dominant_zone": effort_data['dominant_zone'],
+        "total_time": effort_data['total_time'],
+        "zone_breakdown": [
+            {
+                "zone": zone,
+                "label": effort_data['zone_labels'].get(zone, zone),
+                "time_seconds": effort_data['zone_times'].get(zone, 0),
+                "percentage": effort_data['zone_percentages'].get(zone, 0)
+            }
+            for zone in ['easy', 'moderate', 'threshold', 'vo2max', 'anaerobic']
+        ]
+    }

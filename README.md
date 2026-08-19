@@ -38,13 +38,27 @@ cd strava-trends
 
 ### 2. Database
 
-Set up a PostgreSQL database:
+**Option A: Use Docker Compose (recommended)**
+
+Start the test database (port 5432):
+
+```bash
+docker compose -f docker-compose.test.yml up -d
+```
+
+Then update `backend/.env` to match the test DB credentials:
+
+```bash
+DATABASE_URL=postgresql://test_user:***@localhost/strava_trends_test
+```
+
+**Option B: Manual PostgreSQL setup**
 
 ```bash
 createdb strava_trends
 ```
 
-Or use Docker:
+Or use Docker with matching credentials:
 
 ```bash
 docker run -d --name strava-trends-db \
@@ -55,21 +69,27 @@ docker run -d --name strava-trends-db \
   postgres:15-alpine
 ```
 
+Then ensure `backend/.env` has:
+
+```bash
+DATABASE_URL=postgresql://postgres:***@localhost/strava_trends
+```
+
 ### 3. Backend
 
 ```bash
 cd backend
 
-# Create virtual environment
-python3 -m venv .venv
+# Create virtual environment (use uv if python3-venv is not installed)
+uv venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your database URL and Strava credentials
+# Edit .env with your database URL (must match your DB credentials from step 2)
 
 # Run database migrations
 alembic upgrade head

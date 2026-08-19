@@ -74,6 +74,21 @@ export interface ActivityFilters {
   per_page?: number
 }
 
+export interface EffortZoneBreakdown {
+  zone: string
+  label: string
+  time_seconds: number
+  percentage: number
+}
+
+export interface EffortData {
+  activity_id: number
+  max_hr: number
+  dominant_zone: string
+  total_time: number
+  zone_breakdown: EffortZoneBreakdown[]
+}
+
 export const activitiesApi = {
   async list(filters: ActivityFilters = {}): Promise<ActivitiesResponse> {
     const params = new URLSearchParams()
@@ -99,5 +114,12 @@ export const activitiesApi = {
 
   async delete(activityId: number): Promise<void> {
     await apiClient.delete(`/activities/${activityId}`)
+  },
+
+  async getEffort(activityId: number): Promise<EffortData> {
+    const response = await apiClient.get<EffortData>(
+      `/activities/${activityId}/effort`
+    )
+    return response.data
   },
 }
