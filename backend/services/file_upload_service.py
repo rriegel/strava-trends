@@ -109,7 +109,8 @@ class FileUploadService:
             "activity_id": activity.id,
             "activity_name": activity.name,
             "activity_type": activity.type,
-            "start_date": activity.start_date.isoformat() if activity.start_date else None
+            "start_date": activity.start_date.isoformat() if activity.start_date else None,
+            "has_streams": activity.has_streams or False
         }
     
     def _parse_fit(self, file_content: bytes) -> Dict:
