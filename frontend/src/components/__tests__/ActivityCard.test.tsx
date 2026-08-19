@@ -36,7 +36,6 @@ describe('ActivityCard', () => {
 
   it('renders activity type with bullet separator', () => {
     render(<ActivityCard activity={mockActivity} />)
-    // "• Run" appears in the metadata section
     const elements = screen.getAllByText(/Run/)
     expect(elements.length).toBeGreaterThan(0)
   })
@@ -56,14 +55,12 @@ describe('ActivityCard', () => {
   it('renders moving time', () => {
     render(<ActivityCard activity={mockActivity} />)
     expect(screen.getByText('Time')).toBeInTheDocument()
-    // formatDuration returns "1h 0m 0s"
     expect(screen.getByText(/1h/)).toBeInTheDocument()
   })
 
   it('renders pace', () => {
     render(<ActivityCard activity={mockActivity} />)
     expect(screen.getByText('Pace')).toBeInTheDocument()
-    // formatPace returns "5:60" for 2.78 m/s
     expect(screen.getByText(/\/km/)).toBeInTheDocument()
   })
 
@@ -99,34 +96,38 @@ describe('ActivityCard', () => {
   it('calls onClick when activity name is clicked', () => {
     const onClick = vi.fn()
     render(<ActivityCard activity={mockActivity} onClick={onClick} />)
-
     fireEvent.click(screen.getByText('Morning Run'))
     expect(onClick).toHaveBeenCalledWith(mockActivity)
   })
 
-  it('calls onDelete when delete button is clicked and confirm returns true', () => {
+  it('shows confirm dialog when delete button is clicked', () => {
     const onDelete = vi.fn()
-    // Mock window.confirm
-    window.confirm = vi.fn(() => true)
-
     render(<ActivityCard activity={mockActivity} onDelete={onDelete} />)
-
     const deleteButton = screen.getByLabelText('Delete activity')
     fireEvent.click(deleteButton)
+    expect(screen.getByText('Delete Activity')).toBeInTheDocument()
+    expect(screen.getByText(/Are you sure you want to delete/)).toBeInTheDocument()
+    expect(onDelete).not.toHaveBeenCalled()
+  })
 
-    expect(window.confirm).toHaveBeenCalledWith('Delete this activity?')
+  it('calls onDelete when confirm is clicked in dialog', () => {
+    const onDelete = vi.fn()
+    render(<ActivityCard activity={mockActivity} onDelete={onDelete} />)
+    const deleteButton = screen.getByLabelText('Delete activity')
+    fireEvent.click(deleteButton)
+    const confirmButton = screen.getByText('Delete')
+    fireEvent.click(confirmButton)
     expect(onDelete).toHaveBeenCalledWith(1)
   })
 
-  it('does not call onDelete when confirm returns false', () => {
+  it('closes dialog when cancel is clicked', () => {
     const onDelete = vi.fn()
-    window.confirm = vi.fn(() => false)
-
     render(<ActivityCard activity={mockActivity} onDelete={onDelete} />)
-
     const deleteButton = screen.getByLabelText('Delete activity')
     fireEvent.click(deleteButton)
-
+    const cancelButton = screen.getByText('Cancel')
+    fireEvent.click(cancelButton)
+    expect(screen.queryByText('Delete Activity')).not.toBeInTheDocument()
     expect(onDelete).not.toHaveBeenCalled()
   })
 

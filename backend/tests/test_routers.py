@@ -243,3 +243,68 @@ class TestTrendsRouter:
         data = response.json()
         assert data["metric_type"] == "average_speed"
         assert data["bands"] == []
+
+    def test_get_activity_detail_includes_has_streams(self, client, db_session, sample_user):
+        """Test that activity detail response includes has_streams field"""
+        from models.activity import Activity
+        from datetime import datetime
+        
+        activity = Activity(
+            user_id=sample_user.id,
+            strava_id=99999,
+            name="Test Activity",
+            type="Run",
+            start_date=datetime.utcnow(),
+            start_date_local=datetime.utcnow(),
+            distance=5000.0,
+            moving_time=1800,
+            has_streams=True,
+        )
+        db_session.add(activity)
+        db_session.commit()
+        
+        response = client.get(
+            f"/activities/{activity.id}",
+            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "has_streams" in data
+        assert data["has_streams"] is True
+
+    def test_get_activity_streams(self, client, db_session, sample_user):
+        """Test getting activity streams endpoint"""
+        from models.activity import Activity
+        from models.activity_stream import ActivityStream
+        from datetime import datetime
+        
+        activity = Activity(
+            user_id=sample_user.id,
+            strava_id=88888,
+            name="Stream Test",
+            type="Run",
+            start_date=datetime.utcnow(),
+            start_date_local=datetime.utcnow(),
+            has_streams=True,
+        )
+        db_session.add(activity)
+        db_session.flush()
+        
+        stream = ActivityStream(
+            user_id=sample_user.id,
+            activity_id=activity.id,
+            stream_type="latlng",
+            data=[[40.7128, -74.0060], [40.7129, -74.0061]],
+        )
+        db_session.add(stream)
+        db_session.commit()
+        
+        response = client.get(
+            f"/activities/{activity.id}/streams",
+            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "streams" in data
+        assert "latlng" in data["streams"]
+        assert len(data["streams"]["latlng"]["data"]) == 2
