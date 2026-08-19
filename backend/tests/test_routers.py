@@ -291,6 +291,7 @@ class TestTrendsRouter:
         db_session.flush()
         
         stream = ActivityStream(
+            user_id=sample_user.id,
             activity_id=activity.id,
             stream_type="latlng",
             data=[[40.7128, -74.0060], [40.7129, -74.0061]],
