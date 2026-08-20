@@ -33,6 +33,7 @@ class User(Base):
     # Preferences
     default_distance_unit = Column(String(10), default="metric")  # metric, imperial
     preferred_hr_zones = Column(JSONB)  # {"zone_1": {"min": 0, "max": 115}, ...}
+    max_hr = Column(Integer)  # User-configured max HR override (bpm)
 
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())

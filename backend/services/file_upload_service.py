@@ -104,6 +104,32 @@ class FileUploadService:
             activity.has_streams = True
             self.db.commit()
         
+        # Save HR stream if present
+        if activity_data.get('_hr_stream'):
+            hr_stream = ActivityStream(
+                user_id=user_id,
+                activity_id=activity.id,
+                stream_type='heartrate',
+                data=activity_data['_hr_stream'],
+                series_type='time',
+                original_size=len(activity_data['_hr_stream'])
+            )
+            self.db.add(hr_stream)
+            activity.has_streams = True
+            self.db.commit()
+            
+            # Analyze effort zones if we have HR data
+            from services.effort_classifier import EffortClassifier
+            classifier = EffortClassifier(self.db)
+            classifier.analyze_activity(activity.id)
+        else:
+            # Even without HR data, classify distance
+            from services.effort_classifier import EffortClassifier
+            classifier = EffortClassifier(self.db)
+            if activity.distance:
+                activity.distance_bucket = classifier.classify_distance(activity.distance)
+                self.db.commit()
+        
         return {
             "status": "success",
             "activity_id": activity.id,
@@ -138,6 +164,13 @@ class FileUploadService:
             if not session:
                 raise ValueError("No session data found in FIT file")
             
+            # Collect HR stream from record messages
+            hr_stream = []
+            for record in fit_file.get_messages('record'):
+                hr = self._get_field(record, 'heart_rate')
+                if hr is not None:
+                    hr_stream.append(hr)
+            
             # Map FIT fields to our schema
             data = {
                 "name": self._get_field(session, 'event') or "FIT Activity",
@@ -157,6 +190,7 @@ class FileUploadService:
                 "average_cadence": self._get_field(session, 'avg_cadence'),
                 "average_watts": self._get_field(session, 'avg_power'),
                 "max_watts": self._get_field(session, 'max_power'),
+                "_hr_stream": hr_stream if hr_stream else None,
             }
             
             # Clean up None values and convert types
@@ -195,6 +229,7 @@ class FileUploadService:
         # Collect route data for map visualization
         latlng_stream = []
         altitude_stream = []
+        hr_stream = []
         
         for segment in track.segments:
             for i, point in enumerate(segment.points):
@@ -228,10 +263,16 @@ class FileUploadService:
                             if speed >= SPEED_THRESHOLD:
                                 moving_time += time_diff
                 
-                # Extract HR/cadence from extensions if present
+                # Extract HR/cadence from extensions (Garmin gpxtpx namespace)
                 if point.extensions:
-                    # GPX extensions vary by device; this is a simplified extraction
-                    pass
+                    hr_val = self._extract_gpx_extension(point, 'hr')
+                    cad_val = self._extract_gpx_extension(point, 'cad')
+                    
+                    if hr_val is not None:
+                        hr_values.append(hr_val)
+                        hr_stream.append(hr_val)
+                    if cad_val is not None:
+                        cadence_values.append(cad_val)
         
         # Apply moving average smoothing to elevation data to reduce GPS noise
         total_elevation = self._calculate_elevation_gain(elevation_points, ELEVATION_WINDOW)
@@ -248,6 +289,7 @@ class FileUploadService:
         data = {
             "_latlng_stream": latlng_stream if latlng_stream else None,
             "_altitude_stream": altitude_stream if altitude_stream else None,
+            "_hr_stream": hr_stream if hr_stream else None,
             "name": track.name or "GPX Activity",
             "type": "Run",  # GPX doesn't always specify sport; default to Run
             "sport_type": None,
@@ -311,6 +353,34 @@ class FileUploadService:
                 valley = current
         
         return total_gain
+    
+    def _extract_gpx_extension(self, point, field: str) -> Optional[int]:
+        """Extract HR or cadence from GPX trackpoint extensions.
+        
+        Garmin devices use the gpxtpx namespace for TrackPointExtension data.
+        
+        Args:
+            point: GPX trackpoint object
+            field: 'hr' for heart rate, 'cad' for cadence
+        
+        Returns:
+            Integer value if found, None otherwise
+        """
+        try:
+            # GPX extensions are in the TrackPointExtension namespace
+            gpxtpx_ns = 'http://www.garmin.com/xmlschemas/TrackPointExtension/v1'
+            
+            for ext in point.extensions:
+                # Look for TrackPointExtension element
+                if ext.tag == f'{{{gpxtpx_ns}}}TrackPointExtension':
+                    # Find the requested field (hr or cad)
+                    field_elem = ext.find(f'{{{gpxtpx_ns}}}{field}')
+                    if field_elem is not None and field_elem.text:
+                        return int(field_elem.text)
+        except (ValueError, AttributeError):
+            pass
+        
+        return None
     
     def _parse_tcx(self, file_content: bytes) -> Dict:
         """Parse TCX file using xml.etree (TCX is XML-based)"""
