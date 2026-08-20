@@ -172,12 +172,15 @@ class FileUploadService:
                     hr_stream.append(hr)
             
             # Map FIT fields to our schema
+            # Try start_time first, fall back to timestamp if not found
+            start_time = self._get_field(session, 'start_time') or self._get_field(session, 'timestamp')
+            
             data = {
                 "name": self._get_field(session, 'event') or "FIT Activity",
                 "type": self._map_fit_sport(self._get_field(session, 'sport')),
                 "sport_type": self._get_field(session, 'sub_sport'),
-                "start_date": self._get_field(session, 'start_time'),
-                "start_date_local": self._get_field(session, 'start_time'),
+                "start_date": start_time,
+                "start_date_local": start_time,
                 "moving_time": self._get_field(session, 'total_timer_time'),
                 "elapsed_time": self._get_field(session, 'total_elapsed_time'),
                 "distance": self._get_field(session, 'total_distance'),
