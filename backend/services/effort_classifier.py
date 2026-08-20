@@ -12,7 +12,7 @@ from models.user import User
 
 
 class EffortClassifier:
-    """Classify effort based on heart rate zones"""
+    """Classify effort based on heart rate zones and distance"""
     
     # Fixed 5-zone model (percentage of max HR)
     ZONES = {
@@ -22,6 +22,14 @@ class EffortClassifier:
         'vo2max': {'min': 0.80, 'max': 0.90, 'label': 'Zone 4 - VO2 Max'},
         'anaerobic': {'min': 0.90, 'max': 1.00, 'label': 'Zone 5 - Anaerobic'},
     }
+    
+    # Distance buckets (in meters) - ranges capture typical workout distances
+    DISTANCE_BUCKETS = [
+        ('5K', 4000, 6000),
+        ('10K', 8000, 12000),
+        ('Half', 18000, 24000),
+        ('Marathon', 38000, 46000),
+    ]
     
     def __init__(self, db: Session):
         self.db = db
@@ -109,6 +117,25 @@ class EffortClassifier:
         
         return zone_times
     
+    def classify_distance(self, distance_meters: Optional[float]) -> str:
+        """
+        Classify activity distance into a bucket.
+        
+        Args:
+            distance_meters: Distance in meters
+        
+        Returns:
+            Bucket label ('5K', '10K', 'Half', 'Marathon', or 'Other')
+        """
+        if not distance_meters or distance_meters <= 0:
+            return 'Other'
+        
+        for bucket_name, min_dist, max_dist in self.DISTANCE_BUCKETS:
+            if min_dist <= distance_meters <= max_dist:
+                return bucket_name
+        
+        return 'Other'
+    
     def analyze_activity(self, activity_id: int) -> Optional[Dict]:
         """
         Analyze an activity and create effort_group records.
@@ -147,6 +174,10 @@ class EffortClassifier:
         
         # Update activity's effort_zone
         activity.effort_zone = dominant_zone
+        
+        # Classify and set distance bucket
+        if activity.distance:
+            activity.distance_bucket = self.classify_distance(activity.distance)
         
         # Delete existing effort_group records for this activity
         self.db.query(EffortGroup).filter(

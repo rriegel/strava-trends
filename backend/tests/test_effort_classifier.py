@@ -241,3 +241,85 @@ class TestEffortClassifier:
         result = classifier.get_activity_effort(sample_activity.id)
         
         assert result is None
+    
+    def test_classify_distance_5k(self, db_session, sample_user):
+        """Test distance classification for 5K range"""
+        classifier = EffortClassifier(db_session)
+        
+        # 5K range: 4000-6000m
+        assert classifier.classify_distance(4500) == '5K'
+        assert classifier.classify_distance(5000) == '5K'
+        assert classifier.classify_distance(5500) == '5K'
+    
+    def test_classify_distance_10k(self, db_session, sample_user):
+        """Test distance classification for 10K range"""
+        classifier = EffortClassifier(db_session)
+        
+        # 10K range: 8000-12000m
+        assert classifier.classify_distance(9000) == '10K'
+        assert classifier.classify_distance(10000) == '10K'
+        assert classifier.classify_distance(11000) == '10K'
+    
+    def test_classify_distance_half(self, db_session, sample_user):
+        """Test distance classification for half marathon range"""
+        classifier = EffortClassifier(db_session)
+        
+        # Half marathon range: 18000-24000m
+        assert classifier.classify_distance(19000) == 'Half'
+        assert classifier.classify_distance(21097) == 'Half'  # Actual half marathon distance
+        assert classifier.classify_distance(23000) == 'Half'
+    
+    def test_classify_distance_marathon(self, db_session, sample_user):
+        """Test distance classification for marathon range"""
+        classifier = EffortClassifier(db_session)
+        
+        # Marathon range: 38000-46000m
+        assert classifier.classify_distance(40000) == 'Marathon'
+        assert classifier.classify_distance(42195) == 'Marathon'  # Actual marathon distance
+        assert classifier.classify_distance(45000) == 'Marathon'
+    
+    def test_classify_distance_other(self, db_session, sample_user):
+        """Test distance classification for distances outside standard ranges"""
+        classifier = EffortClassifier(db_session)
+        
+        # Below 5K range
+        assert classifier.classify_distance(1000) == 'Other'
+        assert classifier.classify_distance(3000) == 'Other'
+        
+        # Between ranges
+        assert classifier.classify_distance(7000) == 'Other'
+        assert classifier.classify_distance(15000) == 'Other'
+        assert classifier.classify_distance(30000) == 'Other'
+        
+        # Above marathon range
+        assert classifier.classify_distance(50000) == 'Other'
+        
+        # Edge cases
+        assert classifier.classify_distance(0) == 'Other'
+        assert classifier.classify_distance(-100) == 'Other'
+        assert classifier.classify_distance(None) == 'Other'
+    
+    def test_analyze_activity_sets_distance_bucket(self, db_session, sample_user, sample_activity):
+        """Test that analyze_activity sets distance_bucket"""
+        from models.activity_stream import ActivityStream
+        
+        # Set up HR stream
+        hr_stream = ActivityStream(
+            user_id=sample_user.id,
+            activity_id=sample_activity.id,
+            stream_type='heartrate',
+            data=[150, 160, 170],
+            series_type='time',
+            original_size=3
+        )
+        db_session.add(hr_stream)
+        
+        sample_activity.max_heartrate = 200
+        sample_activity.distance = 10000  # 10K
+        db_session.commit()
+        
+        classifier = EffortClassifier(db_session)
+        classifier.analyze_activity(sample_activity.id)
+        
+        db_session.refresh(sample_activity)
+        assert sample_activity.distance_bucket == '10K'

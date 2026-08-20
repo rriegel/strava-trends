@@ -81,11 +81,11 @@ DATABASE_URL=postgresql://postgres:***@localhost/strava_trends
 cd backend
 
 # Create virtual environment (use uv if python3-venv is not installed)
-uv venv .venv
+venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Install dependencies
-uv pip install -r requirements.txt
+pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
@@ -151,6 +151,57 @@ pytest
 cd frontend
 npm run test:run    # Single run
 npm test            # Watch mode
+```
+
+## Troubleshooting
+
+### Database migration issues
+
+If you see 500 errors on API requests or `relation "activities" does not exist` errors, the migrations may be marked as applied but the tables weren't actually created.
+
+**Diagnosis:**
+
+```bash
+# Check what Alembic thinks the current version is
+alembic current
+
+# Check what tables actually exist
+psql $DATABASE_URL -c "\dt"
+```
+
+If `alembic current` shows a version like `002_add_max_hr (head)` but `\dt` only shows `alembic_version` (or is missing tables like `activities`, `users`, etc.), the migration state is out of sync.
+
+**Fix:**
+
+```bash
+# Reset Alembic tracking
+psql $DATABASE_URL -c "DELETE FROM alembic_version;"
+
+# Re-apply all migrations
+alembic upgrade head
+
+# Verify tables were created
+psql $DATABASE_URL -c "\dt"
+```
+
+You should see 8 tables: `activities`, `activity_streams`, `alembic_version`, `computed_metrics`, `effort_groups`, `route_clusters`, `routes`, `users`.
+
+**Re-insert dev user:**
+
+After resetting migrations, the `users` table is empty. Re-insert the dev user:
+
+```bash
+psql $DATABASE_URL -c "
+INSERT INTO users (id, strava_athlete_id, username, access_token, refresh_token, token_expires_at)
+VALUES (1, 0, 'dev', 'dev_token', 'dev_token', NOW() + INTERVAL '1 year');
+"
+```
+
+Then restart uvicorn to clear any stale connection pool:
+
+```bash
+# Stop the server (Ctrl+C) and restart
+uvicorn main:app --reload --port 8000
 ```
 
 ## Project Structure

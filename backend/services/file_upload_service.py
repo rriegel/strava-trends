@@ -122,6 +122,13 @@ class FileUploadService:
             from services.effort_classifier import EffortClassifier
             classifier = EffortClassifier(self.db)
             classifier.analyze_activity(activity.id)
+        else:
+            # Even without HR data, classify distance
+            from services.effort_classifier import EffortClassifier
+            classifier = EffortClassifier(self.db)
+            if activity.distance:
+                activity.distance_bucket = classifier.classify_distance(activity.distance)
+                self.db.commit()
         
         return {
             "status": "success",
