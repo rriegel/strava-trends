@@ -164,14 +164,6 @@ class FileUploadService:
             if not session:
                 raise ValueError("No session data found in FIT file")
             
-            # DEBUG: Print all available fields
-            print("=" * 60)
-            print("FIT FILE SESSION FIELDS:")
-            print("=" * 60)
-            for field in session.fields:
-                print(f"  {field.name}: {field.value}")
-            print("=" * 60)
-            
             # Collect HR stream from record messages
             hr_stream = []
             for record in fit_file.get_messages('record'):
@@ -182,6 +174,10 @@ class FileUploadService:
             # Map FIT fields to our schema
             # Try start_time first, fall back to timestamp if not found
             start_time = self._get_field(session, 'start_time') or self._get_field(session, 'timestamp')
+            
+            # Convert datetime to ISO format string if needed
+            if start_time and hasattr(start_time, 'isoformat'):
+                start_time = start_time.isoformat()
             
             data = {
                 "name": self._get_field(session, 'event') or "FIT Activity",
