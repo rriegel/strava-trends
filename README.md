@@ -80,8 +80,11 @@ DATABASE_URL=postgresql://postgres:***@localhost/strava_trends
 ```bash
 cd backend
 
+# if encountering venv not found issues, reset it
+rm -rf .venv
+
 # Create virtual environment (use uv if python3-venv is not installed)
-venv .venv
+python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Install dependencies
