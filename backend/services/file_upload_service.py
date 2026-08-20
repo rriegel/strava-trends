@@ -164,6 +164,14 @@ class FileUploadService:
             if not session:
                 raise ValueError("No session data found in FIT file")
             
+            # DEBUG: Log all available fields
+            import logging
+            logger = logging.getLogger(__name__)
+            available_fields = []
+            for field in session.fields:
+                available_fields.append(f"{field.name}: {field.value}")
+            logger.info(f"FIT file session fields: {available_fields}")
+            
             # Collect HR stream from record messages
             hr_stream = []
             for record in fit_file.get_messages('record'):
