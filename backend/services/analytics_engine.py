@@ -96,7 +96,7 @@ class AnalyticsEngine:
         elif period == "weekly":
             freq = "W"
         elif period == "monthly":
-            freq = "M"
+            freq = "ME"
         else:
             freq = "W"
         
@@ -132,9 +132,9 @@ class AnalyticsEngine:
         if period == "weekly":
             freq = "W"
         elif period == "monthly":
-            freq = "M"
+            freq = "ME"
         else:
-            freq = "M"
+            freq = "ME"
         
         result = []
         for date, group in df.resample(freq):
