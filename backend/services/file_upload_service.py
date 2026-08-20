@@ -498,8 +498,12 @@ class FileUploadService:
     
     def _clean_activity_data(self, data: Dict) -> Dict:
         """Clean and validate activity data"""
+        print(f"DEBUG _clean_activity_data input: {data}")
+        
         # Remove None values
         cleaned = {k: v for k, v in data.items() if v is not None}
+        
+        print(f"DEBUG _clean_activity_data after None removal: {cleaned}")
         
         # Ensure required fields
         if 'name' not in cleaned:
@@ -507,6 +511,7 @@ class FileUploadService:
         if 'type' not in cleaned:
             cleaned['type'] = 'Other'
         if 'start_date' not in cleaned:
+            print(f"DEBUG: start_date missing from cleaned data!")
             raise ValueError("Activity must have a start_date")
         
         # Convert numeric fields to appropriate types
