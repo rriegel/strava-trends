@@ -1,34 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
-import { getTrends, getPercentiles } from '../api/trends'
-import type { TrendData } from '../types'
+import { getTrend, getPercentileBands, type TrendParams, type PercentileParams } from '../api/trends'
 
-export function useTrends(params: {
-  metric_type: string
-  distance_bucket?: string
-  effort_zone?: string
-  terrain_type?: string
-  start_date?: string
-  end_date?: string
-  aggregation?: 'day' | 'week' | 'month' | 'year'
-}) {
-  return useQuery<TrendData>({
-    queryKey: ['trends', params],
-    queryFn: () => getTrends(params),
+export function useTrend(params: TrendParams) {
+  return useQuery({
+    queryKey: ['trend', params],
+    queryFn: () => getTrend(params),
     enabled: !!params.metric_type,
   })
 }
 
-export function usePercentiles(params: {
-  metric_type: string
-  distance_bucket?: string
-  effort_zone?: string
-  terrain_type?: string
-  start_date?: string
-  end_date?: string
-}) {
+export function usePercentileBands(params: PercentileParams) {
   return useQuery({
-    queryKey: ['percentiles', params],
-    queryFn: () => getPercentiles(params),
-    enabled: !!params.metric_type,
+    queryKey: ['percentile-bands', params],
+    queryFn: () => getPercentileBands(params),
+    enabled: !!params.metric_type && !!params.activity_type,
   })
 }

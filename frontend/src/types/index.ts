@@ -68,6 +68,21 @@ export interface TrendData {
   trend: { slope: number; direction: string; r_squared: number }
 }
 
+export interface PercentileBand {
+  date: string
+  count: number
+  p10: number
+  p25?: number
+  p50: number
+  p75?: number
+  p90: number
+}
+
+export interface PercentileData {
+  metric_type: string
+  bands: PercentileBand[]
+}
+
 export interface Pagination {
   page: number
   per_page: number
