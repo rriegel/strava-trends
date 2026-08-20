@@ -175,9 +175,12 @@ class FileUploadService:
             # Try start_time first, fall back to timestamp if not found
             start_time = self._get_field(session, 'start_time') or self._get_field(session, 'timestamp')
             
+            print(f"DEBUG: start_time extracted: {start_time}, type: {type(start_time)}")
+            
             # Convert datetime to ISO format string if needed
             if start_time and hasattr(start_time, 'isoformat'):
                 start_time = start_time.isoformat()
+                print(f"DEBUG: start_time after conversion: {start_time}")
             
             data = {
                 "name": self._get_field(session, 'event') or "FIT Activity",
