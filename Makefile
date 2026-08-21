@@ -9,7 +9,7 @@ help:
 	@echo "  make backend    - Start backend only (port 8000)"
 	@echo "  make frontend   - Start frontend only (port 3001)"
 	@echo "  make db         - Start dev database only (port 5432)"
-	@echo "  make db-test    - Start test database only (port 5432)"
+	@echo "  make db-test    - Start test database only (port 5433)"
 	@echo "  make test       - Run test suite (starts test DB automatically)"
 	@echo "  make clean      - Stop services and remove all containers/volumes"
 	@echo ""
@@ -42,7 +42,7 @@ db:
 db-test:
 	@echo "Starting test database..."
 	@docker compose -f docker-compose.test.yml up -d
-	@echo "Test database ready on port 5432"
+	@echo "Test database ready on port 5433"
 
 # Wait for dev database to be ready (uses healthcheck, not just pg_isready)
 db-ready:

@@ -53,7 +53,7 @@ cd strava-trends
 
 **Option A: Use Docker Compose (recommended)**
 
-Start the test database (port 5432):
+Start the test database (port 5433):
 
 ```bash
 docker compose -f docker-compose.test.yml up -d
@@ -62,7 +62,7 @@ docker compose -f docker-compose.test.yml up -d
 Then update `backend/.env` to match the test DB credentials:
 
 ```bash
-DATABASE_URL=postgresql://test_user:test_password@localhost/strava_trends_test
+DATABASE_URL=postgresql://test_user:test_password@localhost:5433/strava_trends_test
 ```
 
 **Option B: Manual PostgreSQL setup**
@@ -78,7 +78,7 @@ docker run -d --name strava-trends-db \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=strava_trends \
-  -p 5432:5432 \
+  -p 5433:5432 \
   postgres:15-alpine
 ```
 

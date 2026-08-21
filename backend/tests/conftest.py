@@ -16,7 +16,7 @@ from models.activity import Activity
 
 
 # Use PostgreSQL test database
-SQLALCHEMY_DATABASE_URL = "postgresql://test_user:test_password@localhost:5432/strava_trends_test"
+SQLALCHEMY_DATABASE_URL = "postgresql://test_user:test_password@localhost:5433/strava_trends_test"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
