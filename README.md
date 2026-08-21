@@ -27,6 +27,19 @@ Fitness analytics platform that surfaces trends across activities over time. Str
 - PostgreSQL 15+
 - (Optional) Strava API credentials for OAuth sync
 
+## Quick Start
+
+Use the Makefile for unified start/stop commands:
+
+```bash
+make dev        # Start everything (DB + backend + frontend)
+make stop       # Stop all services
+make status     # Check what's running
+make test       # Run test suite
+```
+
+Run `make help` for all available commands.
+
 ## Local Development
 
 ### 1. Clone the repo
@@ -49,7 +62,7 @@ docker compose -f docker-compose.test.yml up -d
 Then update `backend/.env` to match the test DB credentials:
 
 ```bash
-DATABASE_URL=postgresql://test_user:***@localhost/strava_trends_test
+DATABASE_URL=postgresql://test_user:test_password@localhost/strava_trends_test
 ```
 
 **Option B: Manual PostgreSQL setup**
@@ -72,7 +85,7 @@ docker run -d --name strava-trends-db \
 Then ensure `backend/.env` has:
 
 ```bash
-DATABASE_URL=postgresql://postgres:***@localhost/strava_trends
+DATABASE_URL=postgresql://postgres:postgres@localhost/strava_trends
 ```
 
 ### 3. Backend
@@ -85,7 +98,7 @@ rm -rf .venv
 
 # Create virtual environment (use uv if python3-venv is not installed)
 python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -98,7 +111,7 @@ cp .env.example .env
 alembic upgrade head
 
 # Start the server
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The API is available at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
@@ -115,7 +128,7 @@ npm install
 npm run dev
 ```
 
-The frontend is available at `http://localhost:3000`.
+The frontend is available at `http://localhost:3001`.
 
 ## Environment Variables
 
@@ -128,7 +141,7 @@ The frontend is available at `http://localhost:3000`.
 | `STRAVA_CLIENT_SECRET` | Strava API OAuth client secret | — |
 | `STRAVA_REDIRECT_URI` | OAuth callback URL | `http://localhost:8000/auth/strava/callback` |
 | `SECRET_KEY` | JWT signing key | `change-this-in-production` |
-| `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:3000"]` |
+| `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:3001"]` |
 
 ## Running Tests
 
@@ -156,56 +169,45 @@ npm run test:run    # Single run
 npm test            # Watch mode
 ```
 
+## Stopping Services
+
+Instead of manually hunting down processes with `lsof`, use:
+
+```bash
+make stop       # Stops backend, frontend, and database
+make status     # Verify everything is shut down
+```
+
+If services are still lingering:
+
+```bash
+# Force kill by port
+lsof -ti :8000 | xargs kill -9
+lsof -ti :3001 | xargs kill -9
+
+# Or use the clean target
+make clean      # Stops services and removes containers
+```
+
 ## Troubleshooting
 
 ### Database migration issues
 
-If you see 500 errors on API requests or `relation "activities" does not exist` errors, the migrations may be marked as applied but the tables weren't actually created.
+Migrations run automatically as part of `make backend` / `make dev`. The process detects and self-heals from drift:
 
-**Diagnosis:**
+- **Tables exist but alembic_version is empty** → drops schema and re-applies all migrations
+- **alembic_version has rows but tables are missing** → clears tracking and re-applies migrations
+- **Fresh database** → runs all migrations from scratch
+- **Normal state** → applies only new migrations
 
-```bash
-# Check what Alembic thinks the current version is
-alembic current
-
-# Check what tables actually exist
-psql $DATABASE_URL -c "\dt"
-```
-
-If `alembic current` shows a version like `002_add_max_hr (head)` but `\dt` only shows `alembic_version` (or is missing tables like `activities`, `users`, etc.), the migration state is out of sync.
-
-**Fix:**
+If you still see issues, reset everything:
 
 ```bash
-# Reset Alembic tracking
-psql $DATABASE_URL -c "DELETE FROM alembic_version;"
-
-# Re-apply all migrations
-alembic upgrade head
-
-# Verify tables were created
-psql $DATABASE_URL -c "\dt"
+make clean
+make dev
 ```
 
-You should see 8 tables: `activities`, `activity_streams`, `alembic_version`, `computed_metrics`, `effort_groups`, `route_clusters`, `routes`, `users`.
-
-**Re-insert dev user:**
-
-After resetting migrations, the `users` table is empty. Re-insert the dev user:
-
-```bash
-psql $DATABASE_URL -c "
-INSERT INTO users (id, strava_athlete_id, username, access_token, refresh_token, token_expires_at)
-VALUES (1, 0, 'dev', 'dev_token', 'dev_token', NOW() + INTERVAL '1 year');
-"
-```
-
-Then restart uvicorn to clear any stale connection pool:
-
-```bash
-# Stop the server (Ctrl+C) and restart
-uvicorn main:app --reload --port 8000
-```
+Note: resetting migrations clears all data and re-inserts the dev user (id=1, username='dev').
 
 ## Project Structure
 

@@ -49,7 +49,10 @@ class FileUploadService:
             raise ValueError(f"Unsupported format: {ext}")
         
         # Check for duplicates (same source + source_id)
-        source_id = f"{filename}_{activity_data.get('start_date', '').isoformat()}"
+        start_date_str = activity_data.get('start_date', '')
+        if hasattr(start_date_str, 'isoformat'):
+            start_date_str = start_date_str.isoformat()
+        source_id = f"{filename}_{start_date_str}"
         existing = self.db.query(Activity).filter(
             Activity.user_id == user_id,
             Activity.source == "file_upload",
@@ -164,12 +167,48 @@ class FileUploadService:
             if not session:
                 raise ValueError("No session data found in FIT file")
             
-            # Collect HR stream from record messages
+            # Extract data from record messages (per-second data points)
+            latlng_stream = []
+            altitude_stream = []
             hr_stream = []
+            altitude_points = []
+            hr_values = []
+            
+            # Debug: check first few record messages
+            record_count = 0
             for record in fit_file.get_messages('record'):
+                if record_count < 3:
+                    print(f"DEBUG: record {record_count} fields: {[f.name for f in record.fields]}")
+                record_count += 1
+            print(f"DEBUG: total record messages: {record_count}")
+            
+            for record in fit_file.get_messages('record'):
+                # GPS coordinates
+                lat = self._get_field(record, 'position_lat')
+                lng = self._get_field(record, 'position_long')
+                if lat is not None and lng is not None:
+                    # FIT stores lat/lng in semicircles, convert to degrees
+                    lat_deg = lat * (180.0 / 2**31)
+                    lng_deg = lng * (180.0 / 2**31)
+                    latlng_stream.append([lat_deg, lng_deg])
+                
+                # Altitude
+                alt = self._get_field(record, 'enhanced_altitude') or self._get_field(record, 'altitude')
+                if alt is not None:
+                    altitude_stream.append(alt)
+                    altitude_points.append(alt)
+                
+                # Heart rate
                 hr = self._get_field(record, 'heart_rate')
                 if hr is not None:
                     hr_stream.append(hr)
+                    hr_values.append(hr)
+            
+            # Calculate elevation gain from altitude points
+            total_elevation = self._calculate_elevation_gain(altitude_points, 5)
+            
+            # Debug: list all available fields in session
+            print(f"DEBUG: session fields: {[f.name for f in session.fields]}")
             
             # Map FIT fields to our schema
             # Try start_time first, fall back to timestamp if not found
@@ -182,6 +221,8 @@ class FileUploadService:
                 start_time = start_time.isoformat()
                 print(f"DEBUG: start_time after conversion: {start_time}")
             
+            print(f"DEBUG: start_time before dict construction: {start_time}, type: {type(start_time)}")
+            
             data = {
                 "name": self._get_field(session, 'event') or "FIT Activity",
                 "type": self._map_fit_sport(self._get_field(session, 'sport')),
@@ -191,17 +232,29 @@ class FileUploadService:
                 "moving_time": self._get_field(session, 'total_timer_time'),
                 "elapsed_time": self._get_field(session, 'total_elapsed_time'),
                 "distance": self._get_field(session, 'total_distance'),
-                "total_elevation_gain": self._get_field(session, 'total_ascent'),
+                "total_elevation_gain": total_elevation if total_elevation > 0 else self._get_field(session, 'total_ascent'),
                 "average_speed": self._get_field(session, 'enhanced_avg_speed') or self._get_field(session, 'avg_speed'),
                 "max_speed": self._get_field(session, 'enhanced_max_speed') or self._get_field(session, 'max_speed'),
-                "average_heartrate": self._get_field(session, 'avg_heart_rate'),
-                "max_heartrate": self._get_field(session, 'max_heart_rate'),
-                "has_heartrate": self._get_field(session, 'avg_heart_rate') is not None,
+                "average_heartrate": sum(hr_values) / len(hr_values) if hr_values else self._get_field(session, 'avg_heart_rate'),
+                "max_heartrate": max(hr_values) if hr_values else self._get_field(session, 'max_heart_rate'),
+                "has_heartrate": len(hr_values) > 0 or self._get_field(session, 'avg_heart_rate') is not None,
                 "average_cadence": self._get_field(session, 'avg_cadence'),
                 "average_watts": self._get_field(session, 'avg_power'),
                 "max_watts": self._get_field(session, 'max_power'),
                 "_hr_stream": hr_stream if hr_stream else None,
+                "_latlng_stream": latlng_stream if latlng_stream else None,
+                "_altitude_stream": altitude_stream if altitude_stream else None,
             }
+            
+            print(f"DEBUG: final data dict:")
+            print(f"  distance: {data['distance']}")
+            print(f"  moving_time: {data['moving_time']}")
+            print(f"  average_speed: {data['average_speed']}")
+            print(f"  average_heartrate: {data['average_heartrate']}")
+            print(f"  total_elevation_gain: {data['total_elevation_gain']}")
+            print(f"  hr_values count: {len(hr_values)}")
+            print(f"  latlng_stream count: {len(latlng_stream)}")
+            print(f"  altitude_stream count: {len(altitude_stream)}")
             
             # Clean up None values and convert types
             return self._clean_activity_data(data)
@@ -469,9 +522,19 @@ class FileUploadService:
     def _get_field(self, record, field_name: str):
         """Safely extract a field from a FIT record"""
         try:
-            field = record.get_field(field_name)
-            return field.value if field else None
-        except:
+            # DataMessage has .fields attribute (list of FieldData)
+            if hasattr(record, 'fields'):
+                for field in record.fields:
+                    if field.name == field_name:
+                        print(f"DEBUG _get_field: {field_name} found, value={field.value}, type={type(field.value)}")
+                        return field.value
+                print(f"DEBUG _get_field: {field_name} not found in fields")
+                return None
+            else:
+                print(f"DEBUG _get_field: record has no 'fields' attribute, type={type(record)}")
+                return None
+        except Exception as e:
+            print(f"DEBUG _get_field: {field_name} exception: {type(e).__name__}: {e}")
             return None
     
     def _map_fit_sport(self, sport: Optional[str]) -> str:

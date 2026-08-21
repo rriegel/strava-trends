@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     debug: bool = False
     
     # Database
-    database_url: str = "postgresql://user:***@localhost/strava_trends"
+    database_url: str = "postgresql://postgres:***@localhost:5432/strava_trends"
     
     # Strava OAuth
     strava_client_id: str = ""
