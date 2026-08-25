@@ -360,18 +360,18 @@ class TestGPXParsingImprovements:
     
     def test_calculate_elevation_gain_hysteresis(self, db_session):
         """Test the hysteresis elevation gain calculation directly"""
-        service = FileUploadService(db_session)
+        from utils.activity_calculations import calculate_elevation_gain
         
         # Test case 1: Clear climb exceeding threshold
         points = [100, 100, 100, 103, 105, 105, 105, 108]
-        gain = service._calculate_elevation_gain(points, window=3)
+        gain = calculate_elevation_gain(points, window=3)
         # Should count: 3m (100->103) + 2m (103->105) + 3m (105->108) = 8m
         assert gain >= 5.0
         assert gain < 10.0
         
         # Test case 2: Small fluctuations below threshold should be filtered
         points = [100, 101, 100, 101, 100]
-        gain = service._calculate_elevation_gain(points, window=3)
+        gain = calculate_elevation_gain(points, window=3)
         # All changes are < 2m, should be filtered out
         assert gain < 2.0
         
@@ -379,15 +379,15 @@ class TestGPXParsingImprovements:
         # Note: Moving average smoothing reduces peak values, so the second climb
         # doesn't reach the threshold after smoothing
         points = [100, 100, 100, 105, 105, 100, 100, 104]
-        gain = service._calculate_elevation_gain(points, window=3)
+        gain = calculate_elevation_gain(points, window=3)
         # After smoothing: [100.0, 100.0, 101.67, 103.33, 103.33, 101.67, 101.33, 102.0]
         # Only the first climb (100->103.33) exceeds threshold, gain ≈ 3.33
         assert gain >= 3.0
         assert gain < 5.0
         
         # Test case 4: Empty and single point
-        assert service._calculate_elevation_gain([], window=5) == 0.0
-        assert service._calculate_elevation_gain([100], window=5) == 0.0
+        assert calculate_elevation_gain([], window=5) == 0.0
+        assert calculate_elevation_gain([100], window=5) == 0.0
 
 
     def test_gpx_extracts_and_saves_streams(self, db_session, sample_user):

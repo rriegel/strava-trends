@@ -11,6 +11,11 @@ from sqlalchemy.orm import Session
 from models.activity import Activity
 from models.activity_stream import ActivityStream
 from models.user import User
+from utils.activity_calculations import (
+    calculate_moving_time,
+    calculate_max_speed,
+    calculate_elevation_gain
+)
 
 
 class FileUploadService:
@@ -171,18 +176,25 @@ class FileUploadService:
             latlng_stream = []
             altitude_stream = []
             hr_stream = []
+            cadence_stream = []
             altitude_points = []
             hr_values = []
+            cadence_values = []
+            timestamps = []
+            cumulative_distances = []
             
-            # Debug: check first few record messages
-            record_count = 0
-            for record in fit_file.get_messages('record'):
-                if record_count < 3:
-                    print(f"DEBUG: record {record_count} fields: {[f.name for f in record.fields]}")
-                record_count += 1
-            print(f"DEBUG: total record messages: {record_count}")
+            # Track previous GPS position for cumulative distance
+            prev_lat = None
+            prev_lon = None
+            running_distance = 0.0
             
             for record in fit_file.get_messages('record'):
+                # Timestamp - skip entire record if no timestamp
+                timestamp = self._get_field(record, 'timestamp')
+                if timestamp is None:
+                    continue
+                timestamps.append(timestamp)
+                
                 # GPS coordinates
                 lat = self._get_field(record, 'position_lat')
                 lng = self._get_field(record, 'position_long')
@@ -191,6 +203,25 @@ class FileUploadService:
                     lat_deg = lat * (180.0 / 2**31)
                     lng_deg = lng * (180.0 / 2**31)
                     latlng_stream.append([lat_deg, lng_deg])
+                    
+                    # Calculate segment distance from previous GPS point
+                    if prev_lat is not None and prev_lon is not None:
+                        from math import radians, sin, cos, sqrt, atan2
+                        R = 6371000
+                        lat1_rad = radians(prev_lat)
+                        lat2_rad = radians(lat_deg)
+                        delta_lat = radians(lat_deg - prev_lat)
+                        delta_lon = radians(lng_deg - prev_lon)
+                        
+                        a = sin(delta_lat / 2)**2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lon / 2)**2
+                        c = 2 * atan2(sqrt(a), sqrt(1 - a))
+                        running_distance += R * c
+                    
+                    prev_lat = lat_deg
+                    prev_lon = lng_deg
+                
+                # Cumulative distance mirrors timestamps (one entry per valid record)
+                cumulative_distances.append(running_distance)
                 
                 # Altitude
                 alt = self._get_field(record, 'enhanced_altitude') or self._get_field(record, 'altitude')
@@ -203,42 +234,108 @@ class FileUploadService:
                 if hr is not None:
                     hr_stream.append(hr)
                     hr_values.append(hr)
+                
+                # Cadence
+                cadence = self._get_field(record, 'cadence')
+                if cadence is not None:
+                    cadence_stream.append(cadence)
+                    cadence_values.append(cadence)
             
-            # Calculate elevation gain from altitude points
-            total_elevation = self._calculate_elevation_gain(altitude_points, 5)
+            total_distance = running_distance
             
-            # Debug: list all available fields in session
-            print(f"DEBUG: session fields: {[f.name for f in session.fields]}")
+            # Calculate moving time using common utility
+            moving_time = calculate_moving_time(timestamps, cumulative_distances) if len(timestamps) >= 2 else 0
+            
+            # Calculate max speed using common utility
+            max_speed = calculate_max_speed(timestamps, cumulative_distances) if len(timestamps) >= 2 else 0
+            
+            # Calculate elevation gain using common utility
+            total_elevation = calculate_elevation_gain(altitude_points, 5)
             
             # Map FIT fields to our schema
             # Try start_time first, fall back to timestamp if not found
             start_time = self._get_field(session, 'start_time') or self._get_field(session, 'timestamp')
             
-            print(f"DEBUG: start_time extracted: {start_time}, type: {type(start_time)}")
-            
             # Convert datetime to ISO format string if needed
             if start_time and hasattr(start_time, 'isoformat'):
                 start_time = start_time.isoformat()
-                print(f"DEBUG: start_time after conversion: {start_time}")
             
-            print(f"DEBUG: start_time before dict construction: {start_time}, type: {type(start_time)}")
+            # Calculate elapsed time from timestamps
+            elapsed_time = 0
+            if len(timestamps) >= 2:
+                elapsed_time = (timestamps[-1] - timestamps[0]).total_seconds()
+            
+            # Calculate average speed
+            avg_speed = total_distance / moving_time if moving_time > 0 else 0
+            
+            # Extract sport type for cadence adjustment
+            sport = self._get_field(session, 'sport') or ''
+            
+            # Calculate average cadence
+            # FIT stores running cadence in strides/min (one foot), but Strava displays steps/min (both feet)
+            # For running/walking/hiking, multiply by 2. For cycling, cadence is already in RPM (correct as-is)
+            # Only average non-zero cadence values (exclude stationary periods) to match Strava's calculation
+            if cadence_values:
+                # Filter out zero cadence values (when stopped)
+                moving_cadence = [c for c in cadence_values if c > 0]
+                if moving_cadence:
+                    avg_cadence = sum(moving_cadence) / len(moving_cadence)
+                    if sport.lower() in ['running', 'walking', 'hiking', 'run', 'walk', 'hike']:
+                        avg_cadence = avg_cadence * 2
+                else:
+                    avg_cadence = None
+            else:
+                avg_cadence = self._get_field(session, 'avg_cadence')
+                # Also adjust session-level cadence for running activities
+                if avg_cadence and sport.lower() in ['running', 'walking', 'hiking', 'run', 'walk', 'hike']:
+                    avg_cadence = avg_cadence * 2
+            
+            # Extract activity name - check multiple sources
+            # Strava FIT files may include name in session or activity messages
+            activity_name = None
+            
+            # Try session message first
+            activity_name = self._get_field(session, 'name')
+            
+            # Try activity message if not found
+            if not activity_name:
+                for activity_msg in fit_file.get_messages('activity'):
+                    activity_name = self._get_field(activity_msg, 'name')
+                    if activity_name:
+                        break
+            
+            # Fall back to sport type + date if no name found
+            if not activity_name:
+                sport = self._get_field(session, 'sport') or 'Activity'
+                if start_time and hasattr(start_time, 'strftime'):
+                    date_str = start_time.strftime('%b %d, %Y')
+                elif start_time and isinstance(start_time, str):
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                        date_str = dt.strftime('%b %d, %Y')
+                    except:
+                        date_str = 'Activity'
+                else:
+                    date_str = 'Activity'
+                activity_name = f"{sport.title()} on {date_str}"
             
             data = {
-                "name": self._get_field(session, 'event') or "FIT Activity",
+                "name": activity_name,
                 "type": self._map_fit_sport(self._get_field(session, 'sport')),
                 "sport_type": self._get_field(session, 'sub_sport'),
                 "start_date": start_time,
                 "start_date_local": start_time,
-                "moving_time": self._get_field(session, 'total_timer_time'),
-                "elapsed_time": self._get_field(session, 'total_elapsed_time'),
-                "distance": self._get_field(session, 'total_distance'),
+                "moving_time": int(moving_time) if moving_time > 0 else self._get_field(session, 'total_timer_time'),
+                "elapsed_time": int(elapsed_time) if elapsed_time > 0 else self._get_field(session, 'total_elapsed_time'),
+                "distance": total_distance if total_distance > 0 else self._get_field(session, 'total_distance'),
                 "total_elevation_gain": total_elevation if total_elevation > 0 else self._get_field(session, 'total_ascent'),
-                "average_speed": self._get_field(session, 'enhanced_avg_speed') or self._get_field(session, 'avg_speed'),
-                "max_speed": self._get_field(session, 'enhanced_max_speed') or self._get_field(session, 'max_speed'),
+                "average_speed": avg_speed if avg_speed > 0 else (self._get_field(session, 'enhanced_avg_speed') or self._get_field(session, 'avg_speed')),
+                "max_speed": max_speed if max_speed > 0 else (self._get_field(session, 'enhanced_max_speed') or self._get_field(session, 'max_speed')),
                 "average_heartrate": sum(hr_values) / len(hr_values) if hr_values else self._get_field(session, 'avg_heart_rate'),
                 "max_heartrate": max(hr_values) if hr_values else self._get_field(session, 'max_heart_rate'),
                 "has_heartrate": len(hr_values) > 0 or self._get_field(session, 'avg_heart_rate') is not None,
-                "average_cadence": self._get_field(session, 'avg_cadence'),
+                "average_cadence": avg_cadence,
                 "average_watts": self._get_field(session, 'avg_power'),
                 "max_watts": self._get_field(session, 'max_power'),
                 "_hr_stream": hr_stream if hr_stream else None,
@@ -246,15 +343,16 @@ class FileUploadService:
                 "_altitude_stream": altitude_stream if altitude_stream else None,
             }
             
-            print(f"DEBUG: final data dict:")
-            print(f"  distance: {data['distance']}")
-            print(f"  moving_time: {data['moving_time']}")
-            print(f"  average_speed: {data['average_speed']}")
-            print(f"  average_heartrate: {data['average_heartrate']}")
-            print(f"  total_elevation_gain: {data['total_elevation_gain']}")
-            print(f"  hr_values count: {len(hr_values)}")
-            print(f"  latlng_stream count: {len(latlng_stream)}")
-            print(f"  altitude_stream count: {len(altitude_stream)}")
+            # Debug: uncomment to inspect extracted data
+            # print(f"DEBUG: final data dict:")
+            # print(f"  distance: {data['distance']}")
+            # print(f"  moving_time: {data['moving_time']}")
+            # print(f"  average_speed: {data['average_speed']}")
+            # print(f"  average_heartrate: {data['average_heartrate']}")
+            # print(f"  total_elevation_gain: {data['total_elevation_gain']}")
+            # print(f"  hr_values count: {len(hr_values)}")
+            # print(f"  latlng_stream count: {len(latlng_stream)}")
+            # print(f"  altitude_stream count: {len(altitude_stream)}")
             
             # Clean up None values and convert types
             return self._clean_activity_data(data)
@@ -276,26 +374,24 @@ class FileUploadService:
         
         track = gpx.tracks[0]
         
-        # Calculate summary stats with improved accuracy
-        total_distance = 0
-        moving_time = 0
-        elapsed_time = 0
-        max_speed = 0
+        # Collect data from trackpoints
         hr_values = []
         cadence_values = []
-        elevation_points = []  # Collect for moving average smoothing
-        
-        # Thresholds for filtering GPS noise
-        SPEED_THRESHOLD = 0.5  # m/s - consider stationary below this speed
-        ELEVATION_WINDOW = 5  # Moving average window size for elevation smoothing
+        elevation_points = []
         
         # Collect route data for map visualization
         latlng_stream = []
         altitude_stream = []
         hr_stream = []
+        timestamps = []
+        cumulative_distances = []
         
         for segment in track.segments:
             for i, point in enumerate(segment.points):
+                # Collect timestamp
+                if point.time is not None:
+                    timestamps.append(point.time)
+                
                 # Collect latlng for route map
                 if point.latitude is not None and point.longitude is not None:
                     latlng_stream.append([point.latitude, point.longitude])
@@ -305,26 +401,15 @@ class FileUploadService:
                     elevation_points.append(point.elevation)
                     altitude_stream.append(point.elevation)
                 
-                if i > 0 and segment.points[i-1]:
+                # Calculate cumulative distance
+                if i == 0:
+                    cumulative_distances.append(0.0)
+                else:
                     prev = segment.points[i-1]
                     
                     # Distance: use 2D (horizontal only) to avoid GPS elevation noise
                     distance = point.distance_2d(prev) or 0
-                    total_distance += distance
-                    
-                    # Time and speed calculations
-                    if point.time and prev.time:
-                        time_diff = (point.time - prev.time).total_seconds()
-                        elapsed_time += time_diff
-                        
-                        # Calculate speed and determine if moving
-                        if time_diff > 0 and distance > 0:
-                            speed = distance / time_diff
-                            max_speed = max(max_speed, speed)
-                            
-                            # Only count time if speed exceeds threshold (moving)
-                            if speed >= SPEED_THRESHOLD:
-                                moving_time += time_diff
+                    cumulative_distances.append(cumulative_distances[-1] + distance)
                 
                 # Extract HR/cadence from extensions (Garmin gpxtpx namespace)
                 if point.extensions:
@@ -337,8 +422,20 @@ class FileUploadService:
                     if cad_val is not None:
                         cadence_values.append(cad_val)
         
-        # Apply moving average smoothing to elevation data to reduce GPS noise
-        total_elevation = self._calculate_elevation_gain(elevation_points, ELEVATION_WINDOW)
+        # Calculate distance from GPS coordinates using common utility
+        total_distance = 0
+        if len(latlng_stream) >= 2:
+            from utils.activity_calculations import calculate_distance_from_latlng
+            total_distance = calculate_distance_from_latlng([tuple(p) for p in latlng_stream])
+        
+        # Calculate moving time using common utility
+        moving_time = calculate_moving_time(timestamps, cumulative_distances) if len(timestamps) >= 2 else 0
+        
+        # Calculate max speed using common utility
+        max_speed = calculate_max_speed(timestamps, cumulative_distances) if len(timestamps) >= 2 else 0
+        
+        # Calculate elevation gain using common utility
+        total_elevation = calculate_elevation_gain(elevation_points, 5)
         
         # Get start/end time
         start_time = None
@@ -347,6 +444,12 @@ class FileUploadService:
                 start_time = segment.points[0].time
                 break
         
+        # Calculate elapsed time from timestamps
+        elapsed_time = 0
+        if len(timestamps) >= 2:
+            elapsed_time = (timestamps[-1] - timestamps[0]).total_seconds()
+        
+        # Calculate average speed
         avg_speed = total_distance / moving_time if moving_time > 0 else 0
         
         data = {
@@ -372,50 +475,7 @@ class FileUploadService:
         
         return self._clean_activity_data(data)
     
-    def _calculate_elevation_gain(self, elevation_points: list, window: int = 5) -> float:
-        """Calculate elevation gain using hysteresis/peak detection to reduce GPS noise.
-        
-        This approach tracks elevation peaks and only counts gain when climbing
-        above a previous low point by a meaningful threshold, reducing false
-        positives from GPS drift.
-        
-        Args:
-            elevation_points: List of elevation values in order
-            window: Moving average window size for initial smoothing (default 5)
-        
-        Returns:
-            Total elevation gain in meters
-        """
-        if len(elevation_points) < 2:
-            return 0.0
-        
-        # Step 1: Apply moving average smoothing to reduce high-frequency noise
-        smoothed = []
-        for i in range(len(elevation_points)):
-            start = max(0, i - window // 2)
-            end = min(len(elevation_points), i + window // 2 + 1)
-            window_points = elevation_points[start:end]
-            smoothed.append(sum(window_points) / len(window_points))
-        
-        # Step 2: Hysteresis/peak detection
-        # Only count elevation gain when we climb above a valley by a threshold
-        MIN_GAIN_THRESHOLD = 2.0  # meters - minimum climb to count as real elevation gain
-        
-        total_gain = 0.0
-        valley = smoothed[0]  # Track the lowest point since last peak
-        
-        for i in range(1, len(smoothed)):
-            current = smoothed[i]
-            
-            # If we've climbed above the valley by the threshold, count the gain
-            if current >= valley + MIN_GAIN_THRESHOLD:
-                total_gain += (current - valley)
-                valley = current  # Reset valley to current peak
-            elif current < valley:
-                # We're descending, update the valley
-                valley = current
-        
-        return total_gain
+
     
     def _extract_gpx_extension(self, point, field: str) -> Optional[int]:
         """Extract HR or cadence from GPX trackpoint extensions.
@@ -526,12 +586,13 @@ class FileUploadService:
             if hasattr(record, 'fields'):
                 for field in record.fields:
                     if field.name == field_name:
-                        print(f"DEBUG _get_field: {field_name} found, value={field.value}, type={type(field.value)}")
+                        # Debug: uncomment to trace field extraction
+                        # print(f"DEBUG _get_field: {field_name} found, value={field.value}, type={type(field.value)}")
                         return field.value
-                print(f"DEBUG _get_field: {field_name} not found in fields")
+                # print(f"DEBUG _get_field: {field_name} not found in fields")
                 return None
             else:
-                print(f"DEBUG _get_field: record has no 'fields' attribute, type={type(record)}")
+                # print(f"DEBUG _get_field: record has no 'fields' attribute, type={type(record)}")
                 return None
         except Exception as e:
             print(f"DEBUG _get_field: {field_name} exception: {type(e).__name__}: {e}")
@@ -561,12 +622,14 @@ class FileUploadService:
     
     def _clean_activity_data(self, data: Dict) -> Dict:
         """Clean and validate activity data"""
-        print(f"DEBUG _clean_activity_data input: {data}")
+        # Debug: uncomment to trace data cleaning
+        # print(f"DEBUG _clean_activity_data input: {data}")
         
         # Remove None values
         cleaned = {k: v for k, v in data.items() if v is not None}
         
-        print(f"DEBUG _clean_activity_data after None removal: {cleaned}")
+        # Debug: uncomment to trace data cleaning
+        # print(f"DEBUG _clean_activity_data after None removal: {cleaned}")
         
         # Ensure required fields
         if 'name' not in cleaned:
@@ -574,7 +637,8 @@ class FileUploadService:
         if 'type' not in cleaned:
             cleaned['type'] = 'Other'
         if 'start_date' not in cleaned:
-            print(f"DEBUG: start_date missing from cleaned data!")
+            # Debug: uncomment to trace missing start_date
+            # print(f"DEBUG: start_date missing from cleaned data!")
             raise ValueError("Activity must have a start_date")
         
         # Convert numeric fields to appropriate types
