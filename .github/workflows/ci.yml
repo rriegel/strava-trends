@@ -66,11 +66,11 @@ jobs:
 
       - name: Type check
         working-directory: frontend
-        run: npm run check
+        run: npx tsc --noEmit
 
       - name: Run tests
         working-directory: frontend
-        run: npm test
+        run: npm run test:run
 
       - name: Build
         working-directory: frontend
