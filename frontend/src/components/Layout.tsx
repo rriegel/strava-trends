@@ -6,6 +6,7 @@ const navItems = [
   { path: '/activities', label: 'Activities' },
   { path: '/trends', label: 'Trends' },
   { path: '/routes', label: 'Routes' },
+  { path: '/settings', label: 'Settings' },
 ]
 
 export default function Layout() {

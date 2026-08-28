@@ -126,3 +126,47 @@ async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Logout and invalidate session"""
     # TODO: Invalidate session token
     return {"message": "Logged out"}
+
+@router.get("/dev-login")
+async def dev_login(db: Session = Depends(get_db)):
+    """
+    Development login - creates or returns default user (id=1)
+    This bypasses Strava OAuth for direct file upload workflows
+    """
+    from datetime import datetime
+    
+    # Get or create default user
+    user = db.query(User).filter(User.id == 1).first()
+    
+    if not user:
+        user = User(
+            id=1,
+            strava_athlete_id=None,  # No Strava integration
+            username="default_user",
+            firstname="Default",
+            lastname="User",
+            email=None,
+            access_token=None,
+            refresh_token=None,
+            token_expires_at=None,
+            sync_status="idle"
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    # Generate session token
+    session_token = f"session_{user.id}_{datetime.now().timestamp()}"
+    
+    return {
+        "access_token": session_token,
+        "token_type": "Bearer",
+        "expires_in": 86400,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "firstname": user.firstname,
+            "lastname": user.lastname,
+            "email": user.email
+        }
+    }

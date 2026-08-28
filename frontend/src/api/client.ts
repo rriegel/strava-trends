@@ -13,6 +13,9 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('auth_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+    console.log('[API] Request:', config.url, 'Token length:', token.length)
+  } else {
+    console.warn('[API] No auth token for request:', config.url)
   }
   return config
 })

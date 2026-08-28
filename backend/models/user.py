@@ -8,7 +8,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(BIGINT, primary_key=True, index=True)
-    strava_athlete_id = Column(BIGINT, unique=True, nullable=False, index=True)
+    strava_athlete_id = Column(BIGINT, unique=True, nullable=True, index=True)
 
     # Profile
     username = Column(String(100), unique=True, nullable=True)
@@ -20,10 +20,10 @@ class User(Base):
     state = Column(String(100))
     country = Column(String(100))
 
-    # OAuth tokens (encrypted in production)
-    access_token = Column(String(500), nullable=False)
-    refresh_token = Column(String(500), nullable=False)
-    token_expires_at = Column(DateTime, nullable=False)
+    # OAuth tokens (encrypted in production) - nullable for non-Strava users
+    access_token = Column(String(500), nullable=True)
+    refresh_token = Column(String(500), nullable=True)
+    token_expires_at = Column(DateTime, nullable=True)
 
     # Sync state
     last_sync_at = Column(DateTime)

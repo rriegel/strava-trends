@@ -4,7 +4,14 @@ import type { User } from '../types'
 export interface AuthResponse {
   access_token: string
   token_type: string
-  user: User
+  expires_in: number
+  user: {
+    id: number
+    username: string
+    firstname: string
+    lastname: string
+    email: string | null
+  }
 }
 
 export async function getCurrentUser(): Promise<User> {
@@ -19,5 +26,10 @@ export async function updateUser(data: Partial<User>): Promise<User> {
 
 export async function syncActivities(): Promise<{ status: string; message: string }> {
   const response = await apiClient.post('/users/me/sync')
+  return response.data
+}
+
+export async function devLogin(): Promise<AuthResponse> {
+  const response = await apiClient.get<AuthResponse>('/auth/dev-login')
   return response.data
 }
