@@ -70,7 +70,7 @@ export default function ActivityMap({ activityId, hasStreams }: ActivityMapProps
 
         // Initialize map already centered on the route
         map.current = new mapboxgl.Map({
-          container: mapContainer.current,
+          container: mapContainer.current!,
           style: 'mapbox://styles/mapbox/outdoors-v12',
           center,
           zoom: 13

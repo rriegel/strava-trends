@@ -9,7 +9,8 @@ vi.mock('../client', () => ({
   },
 }))
 
-const mockApiClient = vi.mocked(apiClient)
+const mockGet = vi.mocked(apiClient.get)
+const mockDelete = vi.mocked(apiClient.delete)
 
 describe('activitiesApi', () => {
   beforeEach(() => {
@@ -24,11 +25,11 @@ describe('activitiesApi', () => {
           pagination: { page: 1, per_page: 20, total: 0, total_pages: 0 },
         },
       }
-      mockApiClient.get.mockResolvedValue(mockResponse)
+      mockGet.mockResolvedValue(mockResponse)
 
       const result = await activitiesApi.list()
 
-      expect(mockApiClient.get).toHaveBeenCalledWith('/activities/?')
+      expect(mockGet).toHaveBeenCalledWith('/activities/?')
       expect(result).toEqual(mockResponse.data)
     })
 
@@ -39,7 +40,7 @@ describe('activitiesApi', () => {
           pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
         },
       }
-      mockApiClient.get.mockResolvedValue(mockResponse)
+      mockGet.mockResolvedValue(mockResponse)
 
       const filters = {
         type: 'Run',
@@ -50,7 +51,7 @@ describe('activitiesApi', () => {
 
       const result = await activitiesApi.list(filters)
 
-      expect(mockApiClient.get).toHaveBeenCalledWith(
+      expect(mockGet).toHaveBeenCalledWith(
         '/activities/?type=Run&start_date=2026-01-01&page=2&per_page=10'
       )
       expect(result).toEqual(mockResponse.data)
@@ -63,7 +64,7 @@ describe('activitiesApi', () => {
           pagination: { page: 1, per_page: 20, total: 0, total_pages: 0 },
         },
       }
-      mockApiClient.get.mockResolvedValue(mockResponse)
+      mockGet.mockResolvedValue(mockResponse)
 
       await activitiesApi.list({
         type: undefined,
@@ -71,7 +72,7 @@ describe('activitiesApi', () => {
         page: 1,
       })
 
-      expect(mockApiClient.get).toHaveBeenCalledWith('/activities/?page=1')
+      expect(mockGet).toHaveBeenCalledWith('/activities/?page=1')
     })
   })
 
@@ -85,22 +86,22 @@ describe('activitiesApi', () => {
           moving_time: 3600,
         },
       }
-      mockApiClient.get.mockResolvedValue(mockResponse)
+      mockGet.mockResolvedValue(mockResponse)
 
       const result = await activitiesApi.getDetail(1)
 
-      expect(mockApiClient.get).toHaveBeenCalledWith('/activities/1')
+      expect(mockGet).toHaveBeenCalledWith('/activities/1')
       expect(result).toEqual(mockResponse.data)
     })
   })
 
   describe('delete', () => {
     it('deletes activity by ID', async () => {
-      mockApiClient.delete.mockResolvedValue({})
+      mockDelete.mockResolvedValue({})
 
       await activitiesApi.delete(1)
 
-      expect(mockApiClient.delete).toHaveBeenCalledWith('/activities/1')
+      expect(mockDelete).toHaveBeenCalledWith('/activities/1')
     })
   })
 })

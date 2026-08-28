@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import ActivityDetail from '../ActivityDetail'
-import { activitiesApi } from '../../api/activities'
+import { activitiesApi, ActivityDetail as ActivityDetailType } from '../../api/activities'
 
 vi.mock('../../api/activities')
 
 describe('ActivityDetail', () => {
-  const mockActivity = {
+  const mockActivity: ActivityDetailType = {
     id: 1,
     strava_id: 12345,
     name: 'Morning Run',
@@ -19,12 +19,17 @@ describe('ActivityDetail', () => {
     distance: 10000,
     total_elevation_gain: 150,
     average_speed: 2.78,
+    max_speed: 3.5,
     average_heartrate: 145,
     max_heartrate: 175,
+    has_heartrate: true,
     average_cadence: 85,
     average_watts: null,
+    weighted_average_watts: null,
+    max_watts: null,
     suffer_score: 75,
     kilojoules: null,
+    gear_id: null,
     device_name: 'Garmin Forerunner 945',
     distance_bucket: '10K',
     effort_zone: 'hard',
@@ -32,6 +37,9 @@ describe('ActivityDetail', () => {
     route_id: null,
     has_streams: true,
     computed_metrics: [],
+    effort_groups: [],
+    created_at: '2026-01-15T10:00:00Z',
+    updated_at: null,
   }
 
   beforeEach(() => {
