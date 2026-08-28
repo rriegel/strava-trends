@@ -1,12 +1,69 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func, cast, Date
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from database import get_db
 from models.activity import Activity
 from models.activity_stream import ActivityStream
 
 router = APIRouter()
+
+@router.get("/calendar")
+async def get_activity_calendar(
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    metric: str = Query("distance", description="Metric to aggregate: distance, count, moving_time"),
+    user_id: int = Query(1, description="User ID"),
+    db: Session = Depends(get_db)
+):
+    """Get activity data grouped by date for calendar heatmap"""
+    # Default to last 365 days
+    if not end_date:
+        end_date = datetime.utcnow()
+    if not start_date:
+        start_date = end_date - timedelta(days=365)
+    
+    query = db.query(
+        cast(Activity.start_date_local, Date).label('date'),
+        func.count(Activity.id).label('count'),
+        func.sum(Activity.distance).label('total_distance'),
+        func.sum(Activity.moving_time).label('total_moving_time')
+    ).filter(
+        Activity.user_id == user_id,
+        Activity.start_date_local >= start_date,
+        Activity.start_date_local <= end_date
+    ).group_by(
+        cast(Activity.start_date_local, Date)
+    ).order_by(
+        cast(Activity.start_date_local, Date)
+    )
+    
+    results = query.all()
+    
+    # Build response
+    calendar_data = []
+    for row in results:
+        value = 0
+        if metric == 'distance':
+            value = float(row.total_distance or 0)
+        elif metric == 'count':
+            value = int(row.count)
+        elif metric == 'moving_time':
+            value = int(row.total_moving_time or 0)
+        
+        calendar_data.append({
+            'date': row.date.isoformat(),
+            'value': value,
+            'count': int(row.count)
+        })
+    
+    return {
+        'metric': metric,
+        'data': calendar_data,
+        'start_date': start_date.date().isoformat(),
+        'end_date': end_date.date().isoformat()
+    }
 
 @router.get("/")
 async def list_activities(
