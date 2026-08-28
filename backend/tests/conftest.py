@@ -1,6 +1,7 @@
 """
 Pytest configuration and fixtures for Strava Trends backend tests.
 """
+import os
 import pytest
 from unittest.mock import MagicMock
 from sqlalchemy import create_engine, text
@@ -16,7 +17,11 @@ from models.activity import Activity
 
 
 # Use PostgreSQL test database
-SQLALCHEMY_DATABASE_URL = "postgresql://test_user:test_password@localhost:5433/strava_trends_test"
+# Allow override via environment variable for CI
+SQLALCHEMY_DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://test_user:***@localhost:5433/strava_trends_test"
+)
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
