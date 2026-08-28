@@ -11,11 +11,22 @@ export default function Trends() {
   const [activityType, setActivityType] = useState('')
   const [distanceBucket, setDistanceBucket] = useState('')
   const [aggregation, setAggregation] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
 
   const trendParams = {
     activity_type: activityType || undefined,
     distance_bucket: distanceBucket || undefined,
     aggregation,
+    start_date: startDate || undefined,
+    end_date: endDate || undefined,
+  }
+
+  const clearFilters = () => {
+    setActivityType('')
+    setDistanceBucket('')
+    setStartDate('')
+    setEndDate('')
   }
 
   // Use the first selected metric for percentile bands
@@ -57,9 +68,14 @@ export default function Trends() {
           activityType={activityType}
           distanceBucket={distanceBucket}
           aggregation={aggregation}
+          startDate={startDate}
+          endDate={endDate}
           onActivityTypeChange={setActivityType}
           onDistanceBucketChange={setDistanceBucket}
           onAggregationChange={(v) => setAggregation(v as 'daily' | 'weekly' | 'monthly')}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
+          onClearFilters={clearFilters}
         />
       </div>
 
