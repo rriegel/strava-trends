@@ -20,7 +20,7 @@ from models.activity import Activity
 # Allow override via environment variable for CI
 SQLALCHEMY_DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://test_user:***@localhost:5433/strava_trends_test"
+    "postgresql://test_user:test_password@localhost:5433/strava_trends_test"
 )
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)

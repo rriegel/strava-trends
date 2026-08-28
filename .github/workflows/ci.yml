@@ -15,7 +15,7 @@ jobs:
         image: postgres:15
         env:
           POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password_123
+          POSTGRES_PASSWORD: test_password
           POSTGRES_DB: strava_trends_test
         ports:
           - 5433:5432
@@ -44,7 +44,7 @@ jobs:
       - name: Run tests
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://test_user:***@localhost:5433/strava_trends_test
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5433/strava_trends_test
         run: pytest -v
 
   frontend_test:
