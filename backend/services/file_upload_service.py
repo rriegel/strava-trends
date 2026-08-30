@@ -138,6 +138,11 @@ class FileUploadService:
                 activity.distance_bucket = classifier.classify_distance(activity.distance)
                 self.db.commit()
         
+        # Compute derived metrics (HR/Pace Ratio, GAP, HR Drift)
+        from services.computed_metrics_service import ComputedMetricsService
+        metrics_service = ComputedMetricsService(self.db)
+        metrics_service.compute_metrics_for_activity(activity.id)
+        
         return {
             "status": "success",
             "activity_id": activity.id,

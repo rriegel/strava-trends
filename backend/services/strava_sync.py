@@ -79,6 +79,7 @@ class StravaSyncService:
             # Update existing activity
             for key, value in self._map_activity_fields(activity_data).items():
                 setattr(existing, key, value)
+            activity = existing
         else:
             # Create new activity
             activity = Activity(
@@ -88,6 +89,11 @@ class StravaSyncService:
             self.db.add(activity)
         
         self.db.commit()
+        
+        # Compute derived metrics (HR/Pace Ratio, GAP, HR Drift)
+        from services.computed_metrics_service import ComputedMetricsService
+        metrics_service = ComputedMetricsService(self.db)
+        metrics_service.compute_metrics_for_activity(activity.id)
     
     def _map_activity_fields(self, data: Dict) -> Dict:
         """Map Strava API fields to database fields"""
