@@ -7,13 +7,13 @@ export interface MetricOption {
 }
 
 export const AVAILABLE_METRICS: MetricOption[] = [
-  { value: 'average_speed', label: 'Avg Speed', unit: 'm/s' },
+  { value: 'average_speed', label: 'Avg Pace', unit: 'min/km' },
   { value: 'average_heartrate', label: 'Avg Heart Rate', unit: 'bpm' },
   { value: 'average_cadence', label: 'Avg Cadence', unit: 'spm' },
   { value: 'total_elevation_gain', label: 'Elevation Gain', unit: 'm' },
   { value: 'distance', label: 'Distance', unit: 'm' },
   { value: 'hr_pace_ratio', label: 'HR/Pace Ratio', unit: '' },
-  { value: 'grade_adjusted_pace', label: 'Grade-Adj Pace', unit: 'm/s' },
+  { value: 'grade_adjusted_pace', label: 'Grade-Adj Pace', unit: 'min/km' },
   { value: 'heart_rate_drift', label: 'HR Drift', unit: '%' },
 ]
 
