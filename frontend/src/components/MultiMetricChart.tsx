@@ -74,7 +74,8 @@ export default function MultiMetricChart({
       }
       
       entry[metricType] = displayValue
-      if (typeof displayValue === 'number') {
+      // Only include positive values in trend calculation
+      if (typeof displayValue === 'number' && displayValue > 0) {
         convertedPoints.push({ date, value: displayValue })
       }
     })

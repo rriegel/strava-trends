@@ -49,12 +49,20 @@ export default function Trends() {
 
   // Recalculate trend on converted pace values for pace metrics
   // This ensures R² and direction reflect the pace data the user sees
+  // Use the same data source as the chart (aggregated or raw)
   const primaryTrend = useMemo(() => {
     if (!primaryTrendData) return null
 
+    // Determine which data source to use (same logic as chart)
+    // Chart uses aggregated data when aggregation is NOT 'daily' and aggregated_data exists
+    const showAggregated = aggregation !== 'daily' && primaryTrendData.aggregated_data?.length > 0
+    const sourceData = showAggregated
+      ? primaryTrendData.aggregated_data.map((d) => ({ date: d.period, value: d.value }))
+      : primaryTrendData.data_points?.map((d) => ({ date: d.date, value: d.value })) || []
+
     // For pace metrics, recalculate trend on converted values
-    if (isPaceDisplay(primaryMetric) && primaryTrendData.data_points?.length >= 2) {
-      const convertedPoints = primaryTrendData.data_points
+    if (isPaceDisplay(primaryMetric) && sourceData.length >= 2) {
+      const convertedPoints = sourceData
         .filter((d) => d.value > 0)
         .map((d) => ({
           date: d.date,
@@ -68,7 +76,7 @@ export default function Trends() {
 
     // For non-pace metrics, use backend trend
     return primaryTrendData.trend
-  }, [primaryTrendData, primaryMetric])
+  }, [primaryTrendData, primaryMetric, aggregation])
 
   return (
     <div className="space-y-6">
