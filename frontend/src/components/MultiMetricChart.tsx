@@ -10,6 +10,7 @@ import {
 } from 'recharts'
 import type { TrendData } from '../types'
 import { METRIC_COLORS, AVAILABLE_METRICS } from './MultiMetricSelector'
+import { formatDateTime } from '../utils/formatDate'
 
 interface MultiMetricChartProps {
   data: Record<string, TrendData>
@@ -85,7 +86,7 @@ export default function MultiMetricChart({
 
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-        <p className="text-sm font-medium text-gray-900 mb-2">{label}</p>
+        <p className="text-sm font-medium text-gray-900 mb-2">{formatDateTime(label)}</p>
         {payload.map((entry: any) => {
           const info = getMetricInfo(entry.dataKey)
           return (
@@ -149,6 +150,7 @@ export default function MultiMetricChart({
             stroke="#9ca3af"
             fontSize={12}
             tick={{ fill: '#6b7280' }}
+            tickFormatter={(value) => formatDateTime(value)}
           />
 
           {needsDualAxis ? (

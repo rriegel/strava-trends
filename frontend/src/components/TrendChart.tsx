@@ -1,6 +1,7 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts'
 import type { TrendData } from '../types'
 import { cn } from '../utils/classnames'
+import { formatDateTime } from '../utils/formatDate'
 
 interface TrendChartProps {
   data: TrendData
@@ -72,6 +73,7 @@ export default function TrendChart({
               stroke="#9ca3af"
               fontSize={12}
               tick={{ fill: '#6b7280' }}
+              tickFormatter={(value) => formatDateTime(value)}
             />
             <YAxis 
               stroke="#9ca3af"
@@ -102,6 +104,7 @@ export default function TrendChart({
               stroke="#9ca3af"
               fontSize={12}
               tick={{ fill: '#6b7280' }}
+              tickFormatter={(value) => formatDateTime(value)}
             />
             <YAxis 
               stroke="#9ca3af"
