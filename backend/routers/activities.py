@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from database import get_db
 from models.activity import Activity
 from models.activity_stream import ActivityStream
@@ -20,7 +20,7 @@ async def get_activity_calendar(
     """Get activity data grouped by date for calendar heatmap"""
     # Default to last 365 days
     if not end_date:
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
     if not start_date:
         start_date = end_date - timedelta(days=365)
     

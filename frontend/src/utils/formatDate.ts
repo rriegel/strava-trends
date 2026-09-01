@@ -18,5 +18,5 @@ export function formatDateTime(isoString: string): string {
   const year = date.getFullYear()
   const dateStr = `${month}/${day}/${year}`
   
-  return `${timeStr} ${dateStr}`
+  return `${dateStr} ${timeStr}`
 }
