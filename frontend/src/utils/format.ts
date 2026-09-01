@@ -1,7 +1,16 @@
 /**
- * Check if a metric type is a pace metric (stored as speed in m/s, displayed as pace in min/km)
+ * Check if a metric type needs speed-to-pace conversion (stored as m/s, displayed as min/km)
+ * Note: grade_adjusted_pace is already stored as min/km, so it doesn't need conversion
  */
 export function isPaceMetric(metricType: string): boolean {
+  return metricType === 'average_speed'
+}
+
+/**
+ * Check if a metric is displayed as pace (for formatting purposes)
+ * This includes both metrics that need conversion and those already in pace format
+ */
+export function isPaceDisplay(metricType: string): boolean {
   return metricType === 'average_speed' || metricType === 'grade_adjusted_pace'
 }
 

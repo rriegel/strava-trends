@@ -11,7 +11,7 @@ import {
 import type { TrendData } from '../types'
 import { METRIC_COLORS, AVAILABLE_METRICS } from './MultiMetricSelector'
 import { formatDateTime } from '../utils/formatDate'
-import { convertSpeedToPace, formatPaceDecimal, isPaceMetric } from '../utils/format'
+import { convertSpeedToPace, formatPaceDecimal, isPaceMetric, isPaceDisplay } from '../utils/format'
 
 interface MultiMetricChartProps {
   data: Record<string, TrendData>
@@ -62,6 +62,7 @@ export default function MultiMetricChart({
       const entry = dateMap.get(date)!
       
       // Convert speed (m/s) to pace (min/km) for display
+      // Note: grade_adjusted_pace is already stored as min/km, so only convert average_speed
       let displayValue = value
       if (isPaceMetric(metricType)) {
         displayValue = typeof value === 'number' && value > 0 ? convertSpeedToPace(value) : 0
@@ -101,7 +102,7 @@ export default function MultiMetricChart({
           // Format value based on metric type
           let displayValue: string
           if (typeof entry.value === 'number') {
-            if (isPaceMetric(entry.dataKey)) {
+            if (isPaceDisplay(entry.dataKey)) {
               displayValue = formatPaceDecimal(entry.value)
             } else {
               displayValue = entry.value.toFixed(2)
@@ -134,10 +135,18 @@ export default function MultiMetricChart({
       {metricTypes.map((metricType) => {
         const info = getMetricInfo(metricType)
         const trend = data[metricType]?.trend
+        
+        // For pace metrics, invert the direction (lower pace is better)
+        let direction = trend?.direction || 'stable'
+        if (isPaceDisplay(metricType) && trend?.direction) {
+          direction = trend.direction === 'increasing' ? 'decreasing' : 
+                     trend.direction === 'decreasing' ? 'increasing' : 'stable'
+        }
+        
         const trendColor =
-          trend?.direction === 'increasing'
+          direction === 'increasing'
             ? 'text-green-600'
-            : trend?.direction === 'decreasing'
+            : direction === 'decreasing'
             ? 'text-red-600'
             : 'text-gray-500'
 
@@ -150,7 +159,7 @@ export default function MultiMetricChart({
             <span className="text-sm font-medium text-gray-700">{info.label}</span>
             {trend && (
               <span className={`text-xs ${trendColor}`}>
-                {trend.direction} (R²: {trend.r_squared.toFixed(2)})
+                {direction} (R²: {trend.r_squared.toFixed(2)})
               </span>
             )}
           </div>
@@ -183,7 +192,7 @@ export default function MultiMetricChart({
                 fontSize={12}
                 tick={{ fill: '#6b7280' }}
                 tickFormatter={(value) => {
-                  if (isPaceMetric(metricTypes[0])) {
+                  if (isPaceDisplay(metricTypes[0])) {
                     return formatPaceDecimal(value)
                   }
                   return value.toFixed(1)
@@ -204,7 +213,7 @@ export default function MultiMetricChart({
                   fontSize={12}
                   tick={{ fill: '#6b7280' }}
                   tickFormatter={(value) => {
-                    if (isPaceMetric(metricTypes[1])) {
+                    if (isPaceDisplay(metricTypes[1])) {
                       return formatPaceDecimal(value)
                     }
                     return value.toFixed(1)
@@ -224,7 +233,7 @@ export default function MultiMetricChart({
               fontSize={12} 
               tick={{ fill: '#6b7280' }}
               tickFormatter={(value) => {
-                if (isPaceMetric(metricTypes[0])) {
+                if (isPaceDisplay(metricTypes[0])) {
                   return formatPaceDecimal(value)
                 }
                 return value.toFixed(1)
