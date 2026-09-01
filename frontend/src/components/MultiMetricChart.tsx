@@ -59,7 +59,15 @@ export default function MultiMetricChart({
         dateMap.set(date, { date })
       }
       const entry = dateMap.get(date)!
-      entry[metricType] = value
+      
+      // Convert speed (m/s) to pace (min/km) for display
+      let displayValue = value
+      if (metricType === 'average_speed' || metricType === 'grade_adjusted_pace') {
+        // Convert m/s to min/km: 1000m / speed_mps / 60s = min/km
+        displayValue = typeof value === 'number' && value > 0 ? 1000 / value / 60 : 0
+      }
+      
+      entry[metricType] = displayValue
     })
   })
 
@@ -89,6 +97,22 @@ export default function MultiMetricChart({
         <p className="text-sm font-medium text-gray-900 mb-2">{formatDateTime(label)}</p>
         {payload.map((entry: any) => {
           const info = getMetricInfo(entry.dataKey)
+          
+          // Format value based on metric type
+          let displayValue: string
+          if (typeof entry.value === 'number') {
+            if (entry.dataKey === 'average_speed' || entry.dataKey === 'grade_adjusted_pace') {
+              // Format pace as M:SS
+              const minutes = Math.floor(entry.value)
+              const seconds = Math.round((entry.value - minutes) * 60)
+              displayValue = `${minutes}:${seconds.toString().padStart(2, '0')}`
+            } else {
+              displayValue = entry.value.toFixed(2)
+            }
+          } else {
+            displayValue = entry.value
+          }
+          
           return (
             <div key={entry.dataKey} className="flex items-center gap-2 text-sm">
               <div
@@ -97,7 +121,7 @@ export default function MultiMetricChart({
               />
               <span className="text-gray-600">{info.label}:</span>
               <span className="font-medium text-gray-900">
-                {typeof entry.value === 'number' ? entry.value.toFixed(2) : entry.value}
+                {displayValue}
                 {info.unit && <span className="text-gray-500 ml-1">{info.unit}</span>}
               </span>
             </div>
@@ -161,6 +185,14 @@ export default function MultiMetricChart({
                 stroke={METRIC_COLORS[metricTypes[0]] || '#6b7280'}
                 fontSize={12}
                 tick={{ fill: '#6b7280' }}
+                tickFormatter={(value) => {
+                  if (metricTypes[0] === 'average_speed' || metricTypes[0] === 'grade_adjusted_pace') {
+                    const minutes = Math.floor(value)
+                    const seconds = Math.round((value - minutes) * 60)
+                    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+                  }
+                  return value.toFixed(1)
+                }}
                 label={{
                   value: getMetricInfo(metricTypes[0]).label,
                   angle: -90,
@@ -176,6 +208,14 @@ export default function MultiMetricChart({
                   stroke={METRIC_COLORS[metricTypes[1]] || '#6b7280'}
                   fontSize={12}
                   tick={{ fill: '#6b7280' }}
+                  tickFormatter={(value) => {
+                    if (metricTypes[1] === 'average_speed' || metricTypes[1] === 'grade_adjusted_pace') {
+                      const minutes = Math.floor(value)
+                      const seconds = Math.round((value - minutes) * 60)
+                      return `${minutes}:${seconds.toString().padStart(2, '0')}`
+                    }
+                    return value.toFixed(1)
+                  }}
                   label={{
                     value: getMetricInfo(metricTypes[1]).label,
                     angle: 90,
@@ -186,7 +226,19 @@ export default function MultiMetricChart({
               )}
             </>
           ) : (
-            <YAxis stroke="#9ca3af" fontSize={12} tick={{ fill: '#6b7280' }} />
+            <YAxis 
+              stroke="#9ca3af" 
+              fontSize={12} 
+              tick={{ fill: '#6b7280' }}
+              tickFormatter={(value) => {
+                if (metricTypes[0] === 'average_speed' || metricTypes[0] === 'grade_adjusted_pace') {
+                  const minutes = Math.floor(value)
+                  const seconds = Math.round((value - minutes) * 60)
+                  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+                }
+                return value.toFixed(1)
+              }}
+            />
           )}
 
           <Tooltip content={<CustomTooltip />} />
