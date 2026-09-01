@@ -11,7 +11,7 @@ import {
 import type { TrendData } from '../types'
 import { METRIC_COLORS, AVAILABLE_METRICS } from './MultiMetricSelector'
 import { formatDateTime } from '../utils/formatDate'
-import { convertSpeedToPace, formatPaceDecimal, isPaceMetric, isPaceDisplay } from '../utils/format'
+import { convertSpeedToPace, formatPaceDecimal, isPaceMetric, isPaceDisplay, calculateTrend } from '../utils/format'
 
 interface MultiMetricChartProps {
   data: Record<string, TrendData>
@@ -45,7 +45,9 @@ export default function MultiMetricChart({
   }
 
   // Build chart data by merging all metrics on the same date
+  // Also recalculate trends on converted values for pace metrics
   const dateMap = new Map<string, Record<string, number | string>>()
+  const recalculatedTrends: Record<string, TrendData['trend']> = {}
 
   metricTypes.forEach((metricType) => {
     const metricData = data[metricType]
@@ -54,6 +56,9 @@ export default function MultiMetricChart({
     const points = showAggregated && metricData.aggregated_data.length > 0
       ? metricData.aggregated_data.map((d) => ({ date: d.period, value: d.value }))
       : metricData.data_points.map((d) => ({ date: d.date, value: d.value }))
+
+    // Convert values for display and recalculate trend on converted values
+    const convertedPoints: { date: string; value: number }[] = []
 
     points.forEach(({ date, value }) => {
       if (!dateMap.has(date)) {
@@ -69,7 +74,16 @@ export default function MultiMetricChart({
       }
       
       entry[metricType] = displayValue
+      if (typeof displayValue === 'number') {
+        convertedPoints.push({ date, value: displayValue })
+      }
     })
+
+    // For pace metrics, recalculate trend on converted values
+    // This ensures R² and direction reflect the pace data the user sees
+    if (isPaceDisplay(metricType) && convertedPoints.length >= 2) {
+      recalculatedTrends[metricType] = calculateTrend(convertedPoints)
+    }
   })
 
   const chartData = Array.from(dateMap.values()).sort((a, b) =>
@@ -134,19 +148,13 @@ export default function MultiMetricChart({
     <div className="flex flex-wrap gap-4 mt-4 justify-center">
       {metricTypes.map((metricType) => {
         const info = getMetricInfo(metricType)
-        const trend = data[metricType]?.trend
-        
-        // For pace metrics, invert the direction (lower pace is better)
-        let direction = trend?.direction || 'stable'
-        if (isPaceDisplay(metricType) && trend?.direction) {
-          direction = trend.direction === 'increasing' ? 'decreasing' : 
-                     trend.direction === 'decreasing' ? 'increasing' : 'stable'
-        }
+        // Use recalculated trend for pace metrics, backend trend for others
+        const trend = recalculatedTrends[metricType] || data[metricType]?.trend
         
         const trendColor =
-          direction === 'increasing'
+          trend?.direction === 'increasing'
             ? 'text-green-600'
-            : direction === 'decreasing'
+            : trend?.direction === 'decreasing'
             ? 'text-red-600'
             : 'text-gray-500'
 
@@ -159,7 +167,7 @@ export default function MultiMetricChart({
             <span className="text-sm font-medium text-gray-700">{info.label}</span>
             {trend && (
               <span className={`text-xs ${trendColor}`}>
-                {direction} (R²: {trend.r_squared.toFixed(2)})
+                {trend.direction} (R²: {trend.r_squared.toFixed(2)})
               </span>
             )}
           </div>

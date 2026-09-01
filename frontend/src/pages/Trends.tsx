@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useMultiTrend, usePercentileBands } from '../hooks/useTrends'
 import MultiMetricChart from '../components/MultiMetricChart'
 import MultiMetricSelector, { AVAILABLE_METRICS } from '../components/MultiMetricSelector'
 import TrendFilters from '../components/TrendFilters'
 import StatCard from '../components/StatCard'
-import { formatPace, isPaceMetric } from '../utils/format'
+import { formatPace, isPaceMetric, isPaceDisplay, convertSpeedToPace, calculateTrend } from '../utils/format'
 
 export default function Trends() {
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['average_speed'])
@@ -46,6 +46,29 @@ export default function Trends() {
   // Calculate summary stats from the first metric
   const primaryTrendData = multiTrendData?.[primaryMetric]
   const totalDataPoints = primaryTrendData?.data_points?.length || 0
+
+  // Recalculate trend on converted pace values for pace metrics
+  // This ensures R² and direction reflect the pace data the user sees
+  const primaryTrend = useMemo(() => {
+    if (!primaryTrendData) return null
+
+    // For pace metrics, recalculate trend on converted values
+    if (isPaceDisplay(primaryMetric) && primaryTrendData.data_points?.length >= 2) {
+      const convertedPoints = primaryTrendData.data_points
+        .filter((d) => d.value > 0)
+        .map((d) => ({
+          date: d.date,
+          value: isPaceMetric(primaryMetric) ? convertSpeedToPace(d.value) : d.value,
+        }))
+
+      if (convertedPoints.length >= 2) {
+        return calculateTrend(convertedPoints)
+      }
+    }
+
+    // For non-pace metrics, use backend trend
+    return primaryTrendData.trend
+  }, [primaryTrendData, primaryMetric])
 
   return (
     <div className="space-y-6">
@@ -96,8 +119,8 @@ export default function Trends() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard
               title="Trend"
-              value={primaryTrendData?.trend.direction || 'stable'}
-              subtitle={`R²: ${primaryTrendData?.trend.r_squared.toFixed(2) || '0.00'}`}
+              value={primaryTrend?.direction || 'stable'}
+              subtitle={`R²: ${primaryTrend?.r_squared.toFixed(2) || '0.00'}`}
             />
             <StatCard
               title="Data Points"
@@ -106,7 +129,7 @@ export default function Trends() {
             />
             <StatCard
               title="Slope"
-              value={primaryTrendData?.trend.slope.toFixed(3) || '0.000'}
+              value={primaryTrend?.slope.toFixed(3) || '0.000'}
               subtitle="rate of change"
             />
           </div>

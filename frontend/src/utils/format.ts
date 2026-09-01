@@ -74,3 +74,64 @@ export function formatElevation(meters: number): string {
 export function formatHeartrate(bpm: number): string {
   return `${Math.round(bpm)} bpm`
 }
+
+/**
+ * Calculate linear regression trend for data points
+ * @param dataPoints Array of {date: string, value: number}
+ * @returns Trend object with slope, direction, r_squared
+ */
+export function calculateTrend(dataPoints: { date: string; value: number }[]): {
+  slope: number
+  direction: 'increasing' | 'decreasing' | 'stable'
+  r_squared: number
+} {
+  if (dataPoints.length < 2) {
+    return { slope: 0, direction: 'stable', r_squared: 0 }
+  }
+
+  // Convert dates to numeric (days since first date)
+  const startDate = new Date(dataPoints[0].date)
+  const x = dataPoints.map((d) => {
+    const date = new Date(d.date)
+    return (date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+  })
+  const y = dataPoints.map((d) => d.value)
+
+  const n = x.length
+  const sumX = x.reduce((a, b) => a + b, 0)
+  const sumY = y.reduce((a, b) => a + b, 0)
+  const sumXY = x.reduce((acc, xi, i) => acc + xi * y[i], 0)
+  const sumX2 = x.reduce((acc, xi) => acc + xi * xi, 0)
+  const sumY2 = y.reduce((acc, yi) => acc + yi * yi, 0)
+
+  // Calculate slope and intercept
+  const denominator = n * sumX2 - sumX * sumX
+  if (denominator === 0) {
+    return { slope: 0, direction: 'stable', r_squared: 0 }
+  }
+
+  const slope = (n * sumXY - sumX * sumY) / denominator
+  const intercept = (sumY - slope * sumX) / n
+
+  // Calculate R-squared
+  const yMean = sumY / n
+  const ssTotal = sumY2 - n * yMean * yMean
+  const ssResidual = y.reduce((acc, yi, i) => {
+    const predicted = slope * x[i] + intercept
+    return acc + (yi - predicted) ** 2
+  }, 0)
+
+  const r_squared = ssTotal === 0 ? 0 : 1 - ssResidual / ssTotal
+
+  // Determine direction
+  let direction: 'increasing' | 'decreasing' | 'stable'
+  if (slope > 0.01) {
+    direction = 'increasing'
+  } else if (slope < -0.01) {
+    direction = 'decreasing'
+  } else {
+    direction = 'stable'
+  }
+
+  return { slope, direction, r_squared }
+}
