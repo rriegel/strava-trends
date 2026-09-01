@@ -11,6 +11,7 @@ import {
 import type { TrendData } from '../types'
 import { METRIC_COLORS, AVAILABLE_METRICS } from './MultiMetricSelector'
 import { formatDateTime } from '../utils/formatDate'
+import { convertSpeedToPace, formatPaceDecimal, isPaceMetric } from '../utils/format'
 
 interface MultiMetricChartProps {
   data: Record<string, TrendData>
@@ -62,9 +63,8 @@ export default function MultiMetricChart({
       
       // Convert speed (m/s) to pace (min/km) for display
       let displayValue = value
-      if (metricType === 'average_speed' || metricType === 'grade_adjusted_pace') {
-        // Convert m/s to min/km: 1000m / speed_mps / 60s = min/km
-        displayValue = typeof value === 'number' && value > 0 ? 1000 / value / 60 : 0
+      if (isPaceMetric(metricType)) {
+        displayValue = typeof value === 'number' && value > 0 ? convertSpeedToPace(value) : 0
       }
       
       entry[metricType] = displayValue
@@ -101,11 +101,8 @@ export default function MultiMetricChart({
           // Format value based on metric type
           let displayValue: string
           if (typeof entry.value === 'number') {
-            if (entry.dataKey === 'average_speed' || entry.dataKey === 'grade_adjusted_pace') {
-              // Format pace as M:SS
-              const minutes = Math.floor(entry.value)
-              const seconds = Math.round((entry.value - minutes) * 60)
-              displayValue = `${minutes}:${seconds.toString().padStart(2, '0')}`
+            if (isPaceMetric(entry.dataKey)) {
+              displayValue = formatPaceDecimal(entry.value)
             } else {
               displayValue = entry.value.toFixed(2)
             }
@@ -186,10 +183,8 @@ export default function MultiMetricChart({
                 fontSize={12}
                 tick={{ fill: '#6b7280' }}
                 tickFormatter={(value) => {
-                  if (metricTypes[0] === 'average_speed' || metricTypes[0] === 'grade_adjusted_pace') {
-                    const minutes = Math.floor(value)
-                    const seconds = Math.round((value - minutes) * 60)
-                    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+                  if (isPaceMetric(metricTypes[0])) {
+                    return formatPaceDecimal(value)
                   }
                   return value.toFixed(1)
                 }}
@@ -209,10 +204,8 @@ export default function MultiMetricChart({
                   fontSize={12}
                   tick={{ fill: '#6b7280' }}
                   tickFormatter={(value) => {
-                    if (metricTypes[1] === 'average_speed' || metricTypes[1] === 'grade_adjusted_pace') {
-                      const minutes = Math.floor(value)
-                      const seconds = Math.round((value - minutes) * 60)
-                      return `${minutes}:${seconds.toString().padStart(2, '0')}`
+                    if (isPaceMetric(metricTypes[1])) {
+                      return formatPaceDecimal(value)
                     }
                     return value.toFixed(1)
                   }}
@@ -231,10 +224,8 @@ export default function MultiMetricChart({
               fontSize={12} 
               tick={{ fill: '#6b7280' }}
               tickFormatter={(value) => {
-                if (metricTypes[0] === 'average_speed' || metricTypes[0] === 'grade_adjusted_pace') {
-                  const minutes = Math.floor(value)
-                  const seconds = Math.round((value - minutes) * 60)
-                  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+                if (isPaceMetric(metricTypes[0])) {
+                  return formatPaceDecimal(value)
                 }
                 return value.toFixed(1)
               }}

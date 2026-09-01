@@ -1,8 +1,42 @@
+/**
+ * Check if a metric type is a pace metric (stored as speed in m/s, displayed as pace in min/km)
+ */
+export function isPaceMetric(metricType: string): boolean {
+  return metricType === 'average_speed' || metricType === 'grade_adjusted_pace'
+}
+
+/**
+ * Convert speed (m/s) to pace (min/km) as a decimal number
+ * @param speedMps Speed in meters per second
+ * @returns Pace in minutes per km (e.g., 5.5 = 5:30 min/km)
+ */
+export function convertSpeedToPace(speedMps: number): number {
+  if (!speedMps || speedMps === 0) return 0
+  return 1000 / speedMps / 60
+}
+
+/**
+ * Format speed (m/s) as pace string (M:SS min/km)
+ * @param speedMps Speed in meters per second
+ * @returns Formatted pace string (e.g., "5:00")
+ */
 export function formatPace(speedMps: number): string {
   if (!speedMps || speedMps === 0) return '--:--'
   const paceSecondsPerKm = 1000 / speedMps
   const minutes = Math.floor(paceSecondsPerKm / 60)
   const seconds = Math.round(paceSecondsPerKm % 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+/**
+ * Format a decimal pace value (min/km) as M:SS string
+ * @param paceDecimal Pace in decimal minutes (e.g., 5.5 = 5:30)
+ * @returns Formatted pace string (e.g., "5:30")
+ */
+export function formatPaceDecimal(paceDecimal: number): string {
+  if (!paceDecimal || paceDecimal === 0) return '--:--'
+  const minutes = Math.floor(paceDecimal)
+  const seconds = Math.round((paceDecimal - minutes) * 60)
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 

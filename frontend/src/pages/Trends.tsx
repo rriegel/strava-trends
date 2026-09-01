@@ -4,7 +4,7 @@ import MultiMetricChart from '../components/MultiMetricChart'
 import MultiMetricSelector, { AVAILABLE_METRICS } from '../components/MultiMetricSelector'
 import TrendFilters from '../components/TrendFilters'
 import StatCard from '../components/StatCard'
-import { formatPace } from '../utils/format'
+import { formatPace, isPaceMetric } from '../utils/format'
 
 export default function Trends() {
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['average_speed'])
@@ -162,7 +162,7 @@ export default function Trends() {
 }
 
 function formatMetricValue(value: number, metricType: string): string {
-  if (metricType === 'average_speed') {
+  if (isPaceMetric(metricType)) {
     return formatPace(value)
   }
   if (metricType === 'elevation_gain') {
