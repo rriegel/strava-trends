@@ -62,12 +62,13 @@ export default function Trends() {
 
     // For pace metrics, recalculate trend on converted values
     if (isPaceDisplay(primaryMetric) && sourceData.length >= 2) {
+      // Convert values first, then filter (same logic as chart)
       const convertedPoints = sourceData
-        .filter((d) => d.value > 0)
         .map((d) => ({
           date: d.date,
-          value: isPaceMetric(primaryMetric) ? convertSpeedToPace(d.value) : d.value,
+          value: isPaceMetric(primaryMetric) && d.value > 0 ? convertSpeedToPace(d.value) : d.value,
         }))
+        .filter((d) => d.value > 0)
 
       if (convertedPoints.length >= 2) {
         return calculateTrend(convertedPoints)
