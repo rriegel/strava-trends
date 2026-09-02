@@ -1,42 +1,54 @@
 import { useState } from 'react'
-import { useTrend, usePercentileBands } from '../hooks/useTrends'
-import TrendChart from '../components/TrendChart'
-import MetricSelector from '../components/MetricSelector'
+import { useMultiTrend, usePercentileBands } from '../hooks/useTrends'
+import MultiMetricChart from '../components/MultiMetricChart'
+import MultiMetricSelector, { AVAILABLE_METRICS } from '../components/MultiMetricSelector'
 import TrendFilters from '../components/TrendFilters'
 import StatCard from '../components/StatCard'
-import { formatPace } from '../utils/format'
-
-const METRICS = [
-  { value: 'average_speed', label: 'Average Speed' },
-  { value: 'average_heartrate', label: 'Heart Rate' },
-  { value: 'hr_pace_ratio', label: 'HR/Pace Ratio' },
-  { value: 'pace_variance', label: 'Pace Variance' },
-  { value: 'elevation_gain', label: 'Elevation Gain' },
-]
+import { formatPaceDecimal, isPaceDisplay } from '../utils/format'
 
 export default function Trends() {
-  const [metricType, setMetricType] = useState('average_speed')
+  const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['average_speed'])
   const [activityType, setActivityType] = useState('')
   const [distanceBucket, setDistanceBucket] = useState('')
   const [aggregation, setAggregation] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
 
   const trendParams = {
-    metric_type: metricType,
     activity_type: activityType || undefined,
     distance_bucket: distanceBucket || undefined,
     aggregation,
+    start_date: startDate || undefined,
+    end_date: endDate || undefined,
   }
 
+  const clearFilters = () => {
+    setActivityType('')
+    setDistanceBucket('')
+    setStartDate('')
+    setEndDate('')
+  }
+
+  // Use the first selected metric for the summary stat cards
+  const primaryMetric = selectedMetrics[0]
   const percentileParams = {
-    metric_type: metricType,
+    metric_type: primaryMetric,
     activity_type: activityType || 'Run',
     distance_bucket: distanceBucket || undefined,
   }
 
-  const { data: trendData, isLoading: trendLoading, error: trendError } = useTrend(trendParams)
+  const { data: multiTrendData, isLoading: trendLoading, error: trendError } = useMultiTrend(
+    selectedMetrics,
+    trendParams
+  )
   const { data: percentileData } = usePercentileBands(percentileParams)
 
-  const metricLabel = METRICS.find(m => m.value === metricType)?.label || metricType
+  // Summary stats come from the primary metric's API trend.
+  // Values/trends arrive in display units (pace metrics = min/km) from the
+  // backend, so no client-side recalculation is needed.
+  const primaryTrendData = multiTrendData?.[primaryMetric]
+  const primaryTrend = primaryTrendData?.trend
+  const totalDataPoints = primaryTrendData?.data_points?.length || 0
 
   return (
     <div className="space-y-6">
@@ -48,19 +60,25 @@ export default function Trends() {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border p-6 space-y-4">
-        <MetricSelector
-          metrics={METRICS}
-          value={metricType}
-          onChange={setMetricType}
-          label="Metric"
+        <MultiMetricSelector
+          metrics={AVAILABLE_METRICS}
+          selected={selectedMetrics}
+          onChange={setSelectedMetrics}
+          maxSelections={3}
+          label="Metrics"
         />
         <TrendFilters
           activityType={activityType}
           distanceBucket={distanceBucket}
           aggregation={aggregation}
+          startDate={startDate}
+          endDate={endDate}
           onActivityTypeChange={setActivityType}
           onDistanceBucketChange={setDistanceBucket}
           onAggregationChange={(v) => setAggregation(v as 'daily' | 'weekly' | 'monthly')}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
+          onClearFilters={clearFilters}
         />
       </div>
 
@@ -76,37 +94,39 @@ export default function Trends() {
         </div>
       )}
 
-      {trendData && (
+      {multiTrendData && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard
               title="Trend"
-              value={trendData.trend.direction}
-              subtitle={`R²: ${trendData.trend.r_squared.toFixed(2)}`}
+              value={primaryTrend?.direction || 'stable'}
+              subtitle={`R²: ${primaryTrend?.r_squared.toFixed(2) || '0.00'}`}
             />
             <StatCard
               title="Data Points"
-              value={trendData.data_points.length.toString()}
+              value={totalDataPoints.toString()}
               subtitle="activities analyzed"
             />
             <StatCard
               title="Slope"
-              value={trendData.trend.slope.toFixed(3)}
-              subtitle="rate of change"
+              value={primaryTrend?.slope.toFixed(3) || '0.000'}
+              subtitle={primaryMetric === 'average_speed' || primaryMetric === 'grade_adjusted_pace'
+                ? 'min/km per day'
+                : 'per day'}
             />
           </div>
 
-          <TrendChart
-            data={trendData}
-            title={`${metricLabel} Over Time`}
-            showTrend
+          <MultiMetricChart
+            data={multiTrendData}
+            metricTypes={selectedMetrics}
+            title="Multi-Metric Trend"
             showAggregated={aggregation !== 'daily'}
           />
 
           {percentileData && percentileData.bands.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Percentile Distribution
+                Percentile Distribution ({AVAILABLE_METRICS.find(m => m.value === primaryMetric)?.label || primaryMetric})
               </h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -124,13 +144,13 @@ export default function Trends() {
                       <tr key={band.date}>
                         <td className="px-4 py-2 text-sm text-gray-900">{band.date}</td>
                         <td className="px-4 py-2 text-sm text-gray-600 text-right">
-                          {formatMetricValue(band.p10, metricType)}
+                          {formatMetricValue(band.p10, primaryMetric)}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-900 font-medium text-right">
-                          {formatMetricValue(band.p50, metricType)}
+                          {formatMetricValue(band.p50, primaryMetric)}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-600 text-right">
-                          {formatMetricValue(band.p90, metricType)}
+                          {formatMetricValue(band.p90, primaryMetric)}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-500 text-right">{band.count}</td>
                       </tr>
@@ -146,12 +166,20 @@ export default function Trends() {
   )
 }
 
+/**
+ * Format a percentile-band value for display.
+ * Percentile values arrive in display units (pace = min/km decimal minutes),
+ * so pace metrics use formatPaceDecimal; everything else is a plain number.
+ */
 function formatMetricValue(value: number, metricType: string): string {
-  if (metricType === 'average_speed') {
-    return formatPace(value)
+  if (isPaceDisplay(metricType)) {
+    return formatPaceDecimal(value)
   }
-  if (metricType === 'elevation_gain') {
+  if (metricType === 'total_elevation_gain') {
     return `${value.toFixed(0)}m`
+  }
+  if (metricType === 'distance') {
+    return `${(value / 1000).toFixed(2)}km`
   }
   return value.toFixed(1)
 }

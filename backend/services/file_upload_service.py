@@ -138,6 +138,11 @@ class FileUploadService:
                 activity.distance_bucket = classifier.classify_distance(activity.distance)
                 self.db.commit()
         
+        # Compute derived metrics (HR/Pace Ratio, GAP, HR Drift)
+        from services.computed_metrics_service import ComputedMetricsService
+        metrics_service = ComputedMetricsService(self.db)
+        metrics_service.compute_metrics_for_activity(activity.id)
+        
         return {
             "status": "success",
             "activity_id": activity.id,
@@ -452,6 +457,19 @@ class FileUploadService:
         # Calculate average speed
         avg_speed = total_distance / moving_time if moving_time > 0 else 0
         
+        # Calculate average cadence
+        # GPX stores running cadence in strides/min (one foot), but Strava displays steps/min (both feet)
+        # For running/walking/hiking, multiply by 2. For cycling, cadence is already in RPM (correct as-is)
+        # Only average non-zero cadence values (exclude stationary periods) to match Strava's calculation
+        avg_cadence = None
+        if cadence_values:
+            # Filter out zero cadence values (when stopped)
+            moving_cadence = [c for c in cadence_values if c > 0]
+            if moving_cadence:
+                avg_cadence = sum(moving_cadence) / len(moving_cadence)
+                # GPX running cadence is per-foot, multiply by 2 for steps/min
+                avg_cadence = avg_cadence * 2
+        
         data = {
             "_latlng_stream": latlng_stream if latlng_stream else None,
             "_altitude_stream": altitude_stream if altitude_stream else None,
@@ -470,7 +488,7 @@ class FileUploadService:
             "average_heartrate": sum(hr_values) / len(hr_values) if hr_values else None,
             "max_heartrate": max(hr_values) if hr_values else None,
             "has_heartrate": len(hr_values) > 0,
-            "average_cadence": sum(cadence_values) / len(cadence_values) if cadence_values else None,
+            "average_cadence": avg_cadence,
         }
         
         return self._clean_activity_data(data)
@@ -547,7 +565,7 @@ class FileUploadService:
             if not start_time:
                 start_time = lap.get('StartTime')
             
-            # Extract HR from trackpoints
+            # Extract HR/cadence from trackpoints
             for tp in lap.findall('.//tcx:Trackpoint', namespaces):
                 hr = tp.find('.//tcx:HeartRateBpm/tcx:Value', namespaces)
                 if hr is not None:
@@ -558,6 +576,20 @@ class FileUploadService:
                     cadence_values.append(int(cad.text))
         
         avg_speed = total_distance / total_time if total_time > 0 else 0
+        
+        # Calculate average cadence
+        # TCX stores running cadence in strides/min (one foot), but Strava displays steps/min (both feet)
+        # For running/walking/hiking, multiply by 2. For cycling, cadence is already in RPM (correct as-is)
+        # Only average non-zero cadence values (exclude stationary periods) to match Strava's calculation
+        avg_cadence = None
+        if cadence_values:
+            # Filter out zero cadence values (when stopped)
+            moving_cadence = [c for c in cadence_values if c > 0]
+            if moving_cadence:
+                avg_cadence = sum(moving_cadence) / len(moving_cadence)
+                # TCX running cadence is per-foot, multiply by 2 for steps/min
+                if sport.lower() in ['running', 'walking', 'hiking', 'run', 'walk', 'hike']:
+                    avg_cadence = avg_cadence * 2
         
         data = {
             "name": f"{sport} Activity",
@@ -574,7 +606,7 @@ class FileUploadService:
             "average_heartrate": sum(hr_values) / len(hr_values) if hr_values else None,
             "max_heartrate": max(hr_values) if hr_values else None,
             "has_heartrate": len(hr_values) > 0,
-            "average_cadence": sum(cadence_values) / len(cadence_values) if cadence_values else None,
+            "average_cadence": avg_cadence,
         }
         
         return self._clean_activity_data(data)

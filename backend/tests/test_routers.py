@@ -247,15 +247,15 @@ class TestTrendsRouter:
     def test_get_activity_detail_includes_has_streams(self, client, db_session, sample_user):
         """Test that activity detail response includes has_streams field"""
         from models.activity import Activity
-        from datetime import datetime
+        from datetime import datetime, timezone
         
         activity = Activity(
             user_id=sample_user.id,
             strava_id=99999,
             name="Test Activity",
             type="Run",
-            start_date=datetime.utcnow(),
-            start_date_local=datetime.utcnow(),
+            start_date=datetime.now(timezone.utc),
+            start_date_local=datetime.now(timezone.utc),
             distance=5000.0,
             moving_time=1800,
             has_streams=True,
@@ -276,15 +276,15 @@ class TestTrendsRouter:
         """Test getting activity streams endpoint"""
         from models.activity import Activity
         from models.activity_stream import ActivityStream
-        from datetime import datetime
+        from datetime import datetime, timezone
         
         activity = Activity(
             user_id=sample_user.id,
             strava_id=88888,
             name="Stream Test",
             type="Run",
-            start_date=datetime.utcnow(),
-            start_date_local=datetime.utcnow(),
+            start_date=datetime.now(timezone.utc),
+            start_date_local=datetime.now(timezone.utc),
             has_streams=True,
         )
         db_session.add(activity)

@@ -89,6 +89,19 @@ export interface EffortData {
   zone_breakdown: EffortZoneBreakdown[]
 }
 
+export interface CalendarDay {
+  date: string
+  value: number
+  count: number
+}
+
+export interface CalendarResponse {
+  metric: string
+  data: CalendarDay[]
+  start_date: string
+  end_date: string
+}
+
 export const activitiesApi = {
   async list(filters: ActivityFilters = {}): Promise<ActivitiesResponse> {
     const params = new URLSearchParams()
@@ -101,6 +114,23 @@ export const activitiesApi = {
     
     const response = await apiClient.get<ActivitiesResponse>(
       `/activities/?${params.toString()}`
+    )
+    return response.data
+  },
+
+  async getCalendar(params: {
+    start_date?: string
+    end_date?: string
+    metric?: 'distance' | 'count' | 'moving_time'
+  } = {}): Promise<CalendarResponse> {
+    const searchParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.set(key, String(value))
+      }
+    })
+    const response = await apiClient.get<CalendarResponse>(
+      `/activities/calendar?${searchParams.toString()}`
     )
     return response.data
   },

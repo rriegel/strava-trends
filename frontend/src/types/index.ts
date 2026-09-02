@@ -63,6 +63,7 @@ export interface Route {
 
 export interface TrendData {
   metric_type: string
+  unit: string
   data_points: { date: string; value: number }[]
   aggregated_data: { period: string; value: number; min: number; max: number; count: number }[]
   trend: { slope: number; direction: string; r_squared: number }

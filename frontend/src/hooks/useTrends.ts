@@ -1,11 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
-import { getTrend, getPercentileBands, type TrendParams, type PercentileParams } from '../api/trends'
+import { getMultiMetricTrend, getPercentileBands, type TrendParams, type PercentileParams } from '../api/trends'
 
-export function useTrend(params: TrendParams) {
+export function useMultiTrend(
+  metricTypes: string[],
+  params: Omit<TrendParams, 'metric_type'>
+) {
   return useQuery({
-    queryKey: ['trend', params],
-    queryFn: () => getTrend(params),
-    enabled: !!params.metric_type,
+    queryKey: ['multi-trend', metricTypes, params],
+    queryFn: () => getMultiMetricTrend(metricTypes, params),
+    enabled: metricTypes.length > 0,
   })
 }
 

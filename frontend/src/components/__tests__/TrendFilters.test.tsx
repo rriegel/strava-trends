@@ -7,9 +7,14 @@ describe('TrendFilters', () => {
     activityType: '',
     distanceBucket: '',
     aggregation: 'weekly',
+    startDate: '',
+    endDate: '',
     onActivityTypeChange: vi.fn(),
     onDistanceBucketChange: vi.fn(),
     onAggregationChange: vi.fn(),
+    onStartDateChange: vi.fn(),
+    onEndDateChange: vi.fn(),
+    onClearFilters: vi.fn(),
   }
 
   it('renders activity type selector', () => {

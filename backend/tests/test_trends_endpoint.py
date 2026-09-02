@@ -5,6 +5,7 @@ import pytest
 from datetime import datetime, timedelta
 from models.activity import Activity
 from models.computed_metric import ComputedMetric
+from services.analytics_engine import AnalyticsEngine
 
 
 class TestTrendsEndpoint:
@@ -53,9 +54,14 @@ class TestTrendsEndpoint:
         
         assert data["metric_type"] == "average_speed"
         assert len(data["data_points"]) == 5
-        assert data["trend"]["direction"] == "increasing"
-        assert data["trend"]["slope"] > 0
+        # Speeds increase 2.5 -> 2.9 m/s, so PACE decreases (faster = lower min/km).
+        # Trend direction is computed on display-unit (pace) values.
+        assert data["trend"]["direction"] == "decreasing"
+        assert data["trend"]["slope"] < 0
         assert data["trend"]["r_squared"] > 0.8
+        # Values are returned as pace (min/km), not raw m/s
+        first_pace = AnalyticsEngine.speed_to_pace(2.5)
+        assert data["data_points"][0]["value"] == pytest.approx(first_pace)
     
     def test_get_metric_trend_with_filters(self, client, db_session, sample_user):
         """Test trend endpoint with activity type filter"""
@@ -98,9 +104,10 @@ class TestTrendsEndpoint:
         data = response.json()
         
         assert len(data["data_points"]) == 3
-        # All runs have speed 3.0
+        # All runs have speed 3.0 m/s = 5.556 min/km (display units)
+        expected_pace = AnalyticsEngine.speed_to_pace(3.0)
         for point in data["data_points"]:
-            assert point["value"] == 3.0
+            assert point["value"] == pytest.approx(expected_pace)
     
     def test_get_metric_trend_with_date_range(self, client, db_session, sample_user):
         """Test trend endpoint with date range filter"""
@@ -181,8 +188,10 @@ class TestTrendsEndpoint:
         data = response.json()
         
         assert len(data["data_points"]) == 3
+        # 3.3 m/s = 5.050 min/km (display units)
+        expected_pace = AnalyticsEngine.speed_to_pace(3.3)
         for point in data["data_points"]:
-            assert point["value"] == 3.3
+            assert point["value"] == pytest.approx(expected_pace)
     
     def test_get_metric_trend_with_aggregation(self, client, db_session, sample_user):
         """Test trend endpoint with weekly aggregation"""
