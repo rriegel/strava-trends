@@ -11,7 +11,7 @@ import {
 import type { TrendData } from '../types'
 import { METRIC_COLORS, AVAILABLE_METRICS } from './MultiMetricSelector'
 import { formatDateTime } from '../utils/formatDate'
-import { convertSpeedToPace, formatPaceDecimal, isPaceMetric, isPaceDisplay, calculateTrend } from '../utils/format'
+import { formatPaceDecimal, isPaceDisplay } from '../utils/format'
 
 interface MultiMetricChartProps {
   data: Record<string, TrendData>
@@ -44,10 +44,11 @@ export default function MultiMetricChart({
     )
   }
 
-  // Build chart data by merging all metrics on the same date
-  // Also recalculate trends on converted values for pace metrics
+  // Build chart data by merging all metrics on the same date.
+  // Values arrive from the API already in display units (pace metrics are
+  // min/km) — no conversion here. Zero/invalid pace values are skipped so
+  // they don't plot as 0:00.
   const dateMap = new Map<string, Record<string, number | string>>()
-  const recalculatedTrends: Record<string, TrendData['trend']> = {}
 
   metricTypes.forEach((metricType) => {
     const metricData = data[metricType]
@@ -57,34 +58,17 @@ export default function MultiMetricChart({
       ? metricData.aggregated_data.map((d) => ({ date: d.period, value: d.value }))
       : metricData.data_points.map((d) => ({ date: d.date, value: d.value }))
 
-    // Convert values for display and recalculate trend on converted values
-    const convertedPoints: { date: string; value: number }[] = []
-
     points.forEach(({ date, value }) => {
+      // Skip zero/invalid pace values (e.g. missing speed data) so they don't
+      // plot as 0:00 or drag the pace Y-axis down to zero
+      if (isPaceDisplay(metricType) && (typeof value !== 'number' || value <= 0)) return
+
       if (!dateMap.has(date)) {
         dateMap.set(date, { date })
       }
       const entry = dateMap.get(date)!
-      
-      // Convert speed (m/s) to pace (min/km) for display
-      // Note: grade_adjusted_pace is already stored as min/km, so only convert average_speed
-      let displayValue = value
-      if (isPaceMetric(metricType)) {
-        displayValue = typeof value === 'number' && value > 0 ? convertSpeedToPace(value) : 0
-      }
-      
-      entry[metricType] = displayValue
-      // Only include positive values in trend calculation
-      if (typeof displayValue === 'number' && displayValue > 0) {
-        convertedPoints.push({ date, value: displayValue })
-      }
+      entry[metricType] = value
     })
-
-    // For pace metrics, recalculate trend on converted values
-    // This ensures R² and direction reflect the pace data the user sees
-    if (isPaceDisplay(metricType) && convertedPoints.length >= 2) {
-      recalculatedTrends[metricType] = calculateTrend(convertedPoints)
-    }
   })
 
   const chartData = Array.from(dateMap.values()).sort((a, b) =>
@@ -104,6 +88,16 @@ export default function MultiMetricChart({
     }
   }
 
+  // Trend color: for pace metrics LOWER is better, so decreasing = green.
+  // For everything else increasing = green.
+  const trendColorClass = (metricType: string, direction?: string): string => {
+    if (direction !== 'increasing' && direction !== 'decreasing') return 'text-gray-500'
+    const improving = isPaceDisplay(metricType)
+      ? direction === 'decreasing'
+      : direction === 'increasing'
+    return improving ? 'text-green-600' : 'text-red-600'
+  }
+
   // Custom tooltip showing all metrics
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload || payload.length === 0) return null
@@ -113,7 +107,7 @@ export default function MultiMetricChart({
         <p className="text-sm font-medium text-gray-900 mb-2">{formatDateTime(label)}</p>
         {payload.map((entry: any) => {
           const info = getMetricInfo(entry.dataKey)
-          
+
           // Format value based on metric type
           let displayValue: string
           if (typeof entry.value === 'number') {
@@ -125,7 +119,7 @@ export default function MultiMetricChart({
           } else {
             displayValue = entry.value
           }
-          
+
           return (
             <div key={entry.dataKey} className="flex items-center gap-2 text-sm">
               <div
@@ -144,20 +138,12 @@ export default function MultiMetricChart({
     )
   }
 
-  // Custom legend with trend indicators
+  // Custom legend with trend indicators (trend comes straight from the API)
   const CustomLegend = () => (
     <div className="flex flex-wrap gap-4 mt-4 justify-center">
       {metricTypes.map((metricType) => {
         const info = getMetricInfo(metricType)
-        // Use recalculated trend for pace metrics, backend trend for others
-        const trend = recalculatedTrends[metricType] || data[metricType]?.trend
-        
-        const trendColor =
-          trend?.direction === 'increasing'
-            ? 'text-green-600'
-            : trend?.direction === 'decreasing'
-            ? 'text-red-600'
-            : 'text-gray-500'
+        const trend = data[metricType]?.trend
 
         return (
           <div key={metricType} className="flex items-center gap-2">
@@ -167,7 +153,7 @@ export default function MultiMetricChart({
             />
             <span className="text-sm font-medium text-gray-700">{info.label}</span>
             {trend && (
-              <span className={`text-xs ${trendColor}`}>
+              <span className={`text-xs ${trendColorClass(metricType, trend.direction)}`}>
                 {trend.direction} (R²: {trend.r_squared.toFixed(2)})
               </span>
             )}
@@ -237,9 +223,9 @@ export default function MultiMetricChart({
               )}
             </>
           ) : (
-            <YAxis 
-              stroke="#9ca3af" 
-              fontSize={12} 
+            <YAxis
+              stroke="#9ca3af"
+              fontSize={12}
               tick={{ fill: '#6b7280' }}
               tickFormatter={(value) => {
                 if (isPaceDisplay(metricTypes[0])) {

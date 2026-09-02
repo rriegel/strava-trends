@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useMultiTrend, usePercentileBands } from '../hooks/useTrends'
 import MultiMetricChart from '../components/MultiMetricChart'
 import MultiMetricSelector, { AVAILABLE_METRICS } from '../components/MultiMetricSelector'
 import TrendFilters from '../components/TrendFilters'
 import StatCard from '../components/StatCard'
-import { formatPace, isPaceMetric, isPaceDisplay, convertSpeedToPace, calculateTrend } from '../utils/format'
+import { formatPaceDecimal, isPaceDisplay } from '../utils/format'
 
 export default function Trends() {
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['average_speed'])
@@ -29,7 +29,7 @@ export default function Trends() {
     setEndDate('')
   }
 
-  // Use the first selected metric for percentile bands
+  // Use the first selected metric for the summary stat cards
   const primaryMetric = selectedMetrics[0]
   const percentileParams = {
     metric_type: primaryMetric,
@@ -43,41 +43,12 @@ export default function Trends() {
   )
   const { data: percentileData } = usePercentileBands(percentileParams)
 
-  // Calculate summary stats from the first metric
+  // Summary stats come from the primary metric's API trend.
+  // Values/trends arrive in display units (pace metrics = min/km) from the
+  // backend, so no client-side recalculation is needed.
   const primaryTrendData = multiTrendData?.[primaryMetric]
+  const primaryTrend = primaryTrendData?.trend
   const totalDataPoints = primaryTrendData?.data_points?.length || 0
-
-  // Recalculate trend on converted pace values for pace metrics
-  // This ensures R² and direction reflect the pace data the user sees
-  // Use the same data source as the chart (aggregated or raw)
-  const primaryTrend = useMemo(() => {
-    if (!primaryTrendData) return null
-
-    // Determine which data source to use (same logic as chart)
-    // Chart uses aggregated data when aggregation is NOT 'daily' and aggregated_data exists
-    const showAggregated = aggregation !== 'daily' && primaryTrendData.aggregated_data?.length > 0
-    const sourceData = showAggregated
-      ? primaryTrendData.aggregated_data.map((d) => ({ date: d.period, value: d.value }))
-      : primaryTrendData.data_points?.map((d) => ({ date: d.date, value: d.value })) || []
-
-    // For pace metrics, recalculate trend on converted values
-    if (isPaceDisplay(primaryMetric) && sourceData.length >= 2) {
-      // Convert values first, then filter (same logic as chart)
-      const convertedPoints = sourceData
-        .map((d) => ({
-          date: d.date,
-          value: isPaceMetric(primaryMetric) && d.value > 0 ? convertSpeedToPace(d.value) : d.value,
-        }))
-        .filter((d) => d.value > 0)
-
-      if (convertedPoints.length >= 2) {
-        return calculateTrend(convertedPoints)
-      }
-    }
-
-    // For non-pace metrics, use backend trend
-    return primaryTrendData.trend
-  }, [primaryTrendData, primaryMetric, aggregation])
 
   return (
     <div className="space-y-6">
@@ -139,7 +110,9 @@ export default function Trends() {
             <StatCard
               title="Slope"
               value={primaryTrend?.slope.toFixed(3) || '0.000'}
-              subtitle="rate of change"
+              subtitle={primaryMetric === 'average_speed' || primaryMetric === 'grade_adjusted_pace'
+                ? 'min/km per day'
+                : 'per day'}
             />
           </div>
 
@@ -193,12 +166,20 @@ export default function Trends() {
   )
 }
 
+/**
+ * Format a percentile-band value for display.
+ * Percentile values arrive in display units (pace = min/km decimal minutes),
+ * so pace metrics use formatPaceDecimal; everything else is a plain number.
+ */
 function formatMetricValue(value: number, metricType: string): string {
-  if (isPaceMetric(metricType)) {
-    return formatPace(value)
+  if (isPaceDisplay(metricType)) {
+    return formatPaceDecimal(value)
   }
-  if (metricType === 'elevation_gain') {
+  if (metricType === 'total_elevation_gain') {
     return `${value.toFixed(0)}m`
+  }
+  if (metricType === 'distance') {
+    return `${(value / 1000).toFixed(2)}km`
   }
   return value.toFixed(1)
 }

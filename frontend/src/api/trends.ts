@@ -22,11 +22,6 @@ export interface PercentileParams {
   user_id?: number
 }
 
-export async function getTrend(params: TrendParams): Promise<TrendData> {
-  const response = await apiClient.get('/trends/metrics', { params })
-  return response.data
-}
-
 export async function getMultiMetricTrend(
   metricTypes: string[],
   params: Omit<TrendParams, 'metric_type'>

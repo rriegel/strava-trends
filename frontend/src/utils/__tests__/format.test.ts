@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatPace, formatDistance, formatDuration, formatElevation, formatHeartrate } from '../format'
+import { formatPace, formatPaceDecimal, isPaceDisplay, formatDistance, formatDuration, formatElevation, formatHeartrate } from '../format'
 
 describe('format utilities', () => {
   describe('formatDistance', () => {
@@ -32,7 +32,7 @@ describe('format utilities', () => {
     })
   })
 
-  describe('formatPace', () => {
+  describe('formatPace (speed m/s -> M:SS min/km)', () => {
     it('formats speed in m/s to pace', () => {
       // 3.33 m/s = 5:00 min/km pace
       expect(formatPace(3.333333)).toBe('5:00')
@@ -42,6 +42,39 @@ describe('format utilities', () => {
 
     it('handles zero speed', () => {
       expect(formatPace(0)).toBe('--:--')
+    })
+  })
+
+  describe('formatPaceDecimal (decimal min/km -> M:SS)', () => {
+    it('formats decimal minutes as M:SS', () => {
+      expect(formatPaceDecimal(5.0)).toBe('5:00')
+      expect(formatPaceDecimal(5.5)).toBe('5:30')
+      expect(formatPaceDecimal(6.6666666)).toBe('6:40')
+      expect(formatPaceDecimal(4.25)).toBe('4:15')
+    })
+
+    it('carries seconds >= 60 into the next minute', () => {
+      // 4.999 * 60 = 299.94 -> rounds to 300s = 5:00, not 4:60
+      expect(formatPaceDecimal(4.999)).toBe('5:00')
+    })
+
+    it('handles zero and negative as no data', () => {
+      expect(formatPaceDecimal(0)).toBe('--:--')
+      expect(formatPaceDecimal(-1)).toBe('--:--')
+    })
+  })
+
+  describe('isPaceDisplay', () => {
+    it('flags speed and GAP as pace-formatted metrics', () => {
+      expect(isPaceDisplay('average_speed')).toBe(true)
+      expect(isPaceDisplay('grade_adjusted_pace')).toBe(true)
+    })
+
+    it('does not flag non-pace metrics', () => {
+      expect(isPaceDisplay('average_heartrate')).toBe(false)
+      expect(isPaceDisplay('average_cadence')).toBe(false)
+      expect(isPaceDisplay('distance')).toBe(false)
+      expect(isPaceDisplay('total_elevation_gain')).toBe(false)
     })
   })
 

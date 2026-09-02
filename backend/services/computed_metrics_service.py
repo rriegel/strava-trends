@@ -34,8 +34,7 @@ class ComputedMetricsService:
             return 0
         
         # Convert speed (m/s) to pace (min/km) for running metrics
-        # pace = 1000 / speed / 60 (min per km)
-        avg_pace_min_per_km = 1000.0 / float(activity.average_speed) / 60.0
+        avg_pace_min_per_km = AnalyticsEngine.speed_to_pace(float(activity.average_speed))
         
         # 1. HR/Pace Ratio (HR per min/km)
         if activity.average_heartrate and avg_pace_min_per_km > 0:
