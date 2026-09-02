@@ -95,11 +95,20 @@ export interface CalendarDay {
   count: number
 }
 
+export interface CalendarSummary {
+  total_activities: number
+  total_distance: number
+  total_moving_time: number
+  longest_streak: number
+  most_active_day: string
+}
+
 export interface CalendarResponse {
   metric: string
   data: CalendarDay[]
   start_date: string
   end_date: string
+  summary: CalendarSummary
 }
 
 export const activitiesApi = {

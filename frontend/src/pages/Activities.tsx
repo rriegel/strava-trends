@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import FileUpload from '../components/FileUpload'
 import ActivityList from '../components/ActivityList'
 import ActivityFilters from '../components/ActivityFilters'
@@ -9,8 +10,29 @@ import type { ActivitySummary } from '../api/activities'
 export default function Activities() {
   const [showUpload, setShowUpload] = useState(false)
   const [selectedActivityId, setSelectedActivityId] = useState<number | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Support deep links like /activities?route_id=3 (from the route map popup)
+  const routeIdParam = searchParams.get('route_id')
   const { activities, pagination, isLoading, filters, updateFilters, setPage, deleteActivity, refresh } =
-    useActivities({ per_page: 20, sort_by: 'start_date', sort_order: 'desc' })
+    useActivities({
+      per_page: 20,
+      sort_by: 'start_date',
+      sort_order: 'desc',
+      route_id: routeIdParam ? parseInt(routeIdParam, 10) : undefined,
+    })
+
+  // Show a dismissible banner when activities are filtered by route
+  const [routeFilterActive, setRouteFilterActive] = useState(false)
+  useEffect(() => {
+    setRouteFilterActive(!!routeIdParam)
+  }, [routeIdParam])
+
+  const clearRouteFilter = () => {
+    searchParams.delete('route_id')
+    setSearchParams(searchParams, { replace: true })
+    updateFilters({ route_id: undefined })
+  }
 
   const handleActivityClick = (activity: ActivitySummary) => {
     setSelectedActivityId(activity.id)
@@ -50,6 +72,20 @@ export default function Activities() {
       )}
 
       <div className="mb-4">
+        {routeFilterActive && (
+          <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 mb-3">
+            <p className="text-sm text-blue-800">
+              Showing activities on the selected route
+            </p>
+            <button
+              type="button"
+              onClick={clearRouteFilter}
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            >
+              Show all activities
+            </button>
+          </div>
+        )}
         <ActivityFilters filters={filters} onFilterChange={updateFilters} />
       </div>
 
