@@ -14,6 +14,7 @@ describe('TrendFilters', () => {
     onAggregationChange: vi.fn(),
     onStartDateChange: vi.fn(),
     onEndDateChange: vi.fn(),
+    onDateRangeChange: vi.fn(),
     onClearFilters: vi.fn(),
   }
 
@@ -59,5 +60,23 @@ describe('TrendFilters', () => {
     expect((selects[0] as HTMLSelectElement).value).toBe('Run')
     expect((selects[1] as HTMLSelectElement).value).toBe('10K')
     expect((selects[2] as HTMLSelectElement).value).toBe('daily')
+  })
+
+  it('preset click emits BOTH dates via a single onDateRangeChange call', () => {
+    render(<TrendFilters {...defaultProps} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Last 30 days' }))
+    expect(defaultProps.onDateRangeChange).toHaveBeenCalledTimes(1)
+    const [start, end] = defaultProps.onDateRangeChange.mock.calls[0]
+    expect(start).not.toBe('')
+    expect(end).not.toBe('')
+    expect(new Date(start).getTime()).toBeLessThan(new Date(end).getTime())
+  })
+
+  it("'All time' emits empty start and end via onDateRangeChange", () => {
+    render(<TrendFilters {...defaultProps} />)
+    fireEvent.click(screen.getByRole('button', { name: 'All time' }))
+    expect(defaultProps.onDateRangeChange).toHaveBeenCalledWith('', '')
+    expect(defaultProps.onStartDateChange).not.toHaveBeenCalled()
+    expect(defaultProps.onEndDateChange).not.toHaveBeenCalled()
   })
 })

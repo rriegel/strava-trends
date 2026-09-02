@@ -77,6 +77,13 @@ export default function Trends() {
   const setAggregation = (agg: string) => setFilters({ aggregation: agg })
   const setStartDate = (start: string) => setFilters({ start })
   const setEndDate = (end: string) => setFilters({ end })
+  // One user action = one setSearchParams call. The date presets need to set
+  // start and end together; two consecutive setFilters calls would race because
+  // react-router's setSearchParams callback form reads the render-closure
+  // searchParams (not accumulated state), so the second call would clobber the
+  // first under { replace: true }.
+  const setDateRange = (startDate: string, endDate: string) =>
+    setFilters({ start: startDate, end: endDate })
 
   // Keep the URL in sync on first mount if params are missing entirely,
   // so a bare /trends link immediately becomes shareable
@@ -148,6 +155,7 @@ export default function Trends() {
           onAggregationChange={(v) => setAggregation(v as 'daily' | 'weekly' | 'monthly')}
           onStartDateChange={setStartDate}
           onEndDateChange={setEndDate}
+          onDateRangeChange={setDateRange}
           onClearFilters={clearFilters}
         />
       </div>
