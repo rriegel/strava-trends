@@ -184,8 +184,12 @@ export default function RouteMap() {
     } else {
       map.current.on('load', loadRoutes)
     }
+  }, [routes])
 
-    // If the API returned exactly the page size, there may be more routes
+  // If the API returned exactly the page size, there may be more routes.
+  // Sidebar concern — must fire even when the map never initialized
+  // (no Mapbox token in CI), so it can't live in the map-drawing effect.
+  useEffect(() => {
     setRoutesTruncated(routes.length >= 100)
   }, [routes])
 
