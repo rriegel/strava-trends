@@ -1,5 +1,8 @@
 """
 Tests for the /activities/calendar endpoint (heatmap data + summary stats).
+
+The endpoint defaults to the last 365 days, so tests either create activities
+relative to "now" (for default-window tests) or pass an explicit date range.
 """
 from datetime import datetime, timedelta
 
@@ -25,6 +28,12 @@ def _add_activity(db_session, user_id, day: datetime, distance=5000.0, moving_ti
     return activity
 
 
+def _days_ago(n: int, hour: int = 8) -> datetime:
+    """Timestamp n days before now, inside the endpoint's default 365-day window."""
+    day = datetime.now().replace(hour=hour, minute=0, second=0, microsecond=0) - timedelta(days=n)
+    return day
+
+
 class TestCalendarEndpoint:
     """Test /activities/calendar heatmap + summary"""
 
@@ -39,8 +48,8 @@ class TestCalendarEndpoint:
         assert data["summary"]["most_active_day"] == ""
 
     def test_summary_totals(self, client, db_session, sample_user):
-        base = datetime(2024, 3, 1, 8, 0, 0)
-        # 3 activities on one day + 1 on another
+        base = _days_ago(2)
+        # 3 activities on one day + 1 on the next
         _add_activity(db_session, sample_user.id, base, distance=5000, moving_time=1800)
         _add_activity(db_session, sample_user.id, base + timedelta(hours=2), distance=8000, moving_time=2400)
         _add_activity(db_session, sample_user.id, base + timedelta(hours=4), distance=3000, moving_time=900)
@@ -61,8 +70,8 @@ class TestCalendarEndpoint:
         assert summary["most_active_day"] == base.strftime("%A")
 
     def test_longest_streak_with_gaps(self, client, db_session, sample_user):
-        # Streak of 3 days, gap, then streak of 2
-        base = datetime(2024, 5, 1, 8, 0, 0)
+        # Streak of 3 days, gap, then streak of 2 — all within the default window
+        base = _days_ago(6)
         for offset in (0, 1, 2, 5, 6):
             _add_activity(db_session, sample_user.id, base + timedelta(days=offset))
         db_session.commit()
