@@ -48,18 +48,27 @@ export default function Trends() {
   const startDate = filters.startDate
   const endDate = filters.endDate
 
-  // Sync filter state -> URL (shareable links, back/forward works)
+  // Sync filter state -> URL (shareable links, back/forward works).
+  // setSearchParams accepts a callback form (like setState) so consecutive
+  // updates compose correctly — e.g. the date-range presets set start and
+  // end in one logical update. Using the current searchParams directly here
+  // would make the second call clobber the first (stale read).
   const setFilters = (updates: Record<string, string | string[]>) => {
-    const next = new URLSearchParams(searchParams)
-    Object.entries(updates).forEach(([key, value]) => {
-      const serialized = Array.isArray(value) ? value.join(',') : value
-      if (serialized) {
-        next.set(key, serialized)
-      } else {
-        next.delete(key)
-      }
-    })
-    setSearchParams(next, { replace: true })
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        Object.entries(updates).forEach(([key, value]) => {
+          const serialized = Array.isArray(value) ? value.join(',') : value
+          if (serialized) {
+            next.set(key, serialized)
+          } else {
+            next.delete(key)
+          }
+        })
+        return next
+      },
+      { replace: true }
+    )
   }
 
   const setSelectedMetrics = (metrics: string[]) => setFilters({ metrics })
