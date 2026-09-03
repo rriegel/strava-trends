@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMultiTrend, usePercentileBands } from '../hooks/useTrends'
+import { useRoute } from '../hooks/useRoutes'
 import MultiMetricChart from '../components/MultiMetricChart'
 import MultiMetricSelector, { AVAILABLE_METRICS } from '../components/MultiMetricSelector'
 import TrendFilters from '../components/TrendFilters'
@@ -21,11 +22,13 @@ function filtersFromParams(params: URLSearchParams): {
   aggregation: 'daily' | 'weekly' | 'monthly'
   startDate: string
   endDate: string
+  routeId: number | null
 } {
   const metrics = (params.get('metrics') || 'average_speed')
     .split(',')
     .filter((m) => VALID_METRICS.has(m))
   const aggregationParam = params.get('aggregation') || 'weekly'
+  const routeIdParam = parseInt(params.get('route_id') || '', 10)
 
   return {
     metrics: metrics.length > 0 ? metrics : ['average_speed'],
@@ -34,6 +37,7 @@ function filtersFromParams(params: URLSearchParams): {
     aggregation: (VALID_AGGREGATIONS.has(aggregationParam) ? aggregationParam : 'weekly') as 'daily' | 'weekly' | 'monthly',
     startDate: params.get('start') || '',
     endDate: params.get('end') || '',
+    routeId: Number.isFinite(routeIdParam) && routeIdParam > 0 ? routeIdParam : null,
   }
 }
 
@@ -47,6 +51,11 @@ export default function Trends() {
   const aggregation = filters.aggregation
   const startDate = filters.startDate
   const endDate = filters.endDate
+  const routeId = filters.routeId
+
+  // Route name for the filter chip (null id -> hook disabled)
+  const { data: routeFilterData } = useRoute(routeId ?? 0)
+  const routeFilterName = routeFilterData?.name || (routeId ? `Route ${routeId}` : null)
 
   // Sync filter state -> URL (shareable links, back/forward works).
   // setSearchParams accepts a callback form (like setState) so consecutive
@@ -77,6 +86,7 @@ export default function Trends() {
   const setAggregation = (agg: string) => setFilters({ aggregation: agg })
   const setStartDate = (start: string) => setFilters({ start })
   const setEndDate = (end: string) => setFilters({ end })
+  const clearRouteFilter = () => setFilters({ route_id: '' })
   // One user action = one setSearchParams call. The date presets need to set
   // start and end together; two consecutive setFilters calls would race because
   // react-router's setSearchParams callback form reads the render-closure
@@ -104,11 +114,13 @@ export default function Trends() {
     metric_type: primaryMetric,
     activity_type: activityType || 'Run',
     distance_bucket: distanceBucket || undefined,
+    route_id: routeId || undefined,
   }
 
   const trendParams = {
     activity_type: activityType || undefined,
     distance_bucket: distanceBucket || undefined,
+    route_id: routeId || undefined,
     aggregation,
     start_date: startDate || undefined,
     end_date: endDate || undefined,
@@ -137,6 +149,24 @@ export default function Trends() {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border p-6 space-y-4">
+        {routeId && routeFilterName && (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-sm text-blue-800">
+              Route: {routeFilterName}
+              <button
+                type="button"
+                onClick={clearRouteFilter}
+                aria-label="Clear route filter"
+                className="ml-1 text-blue-400 hover:text-blue-700 leading-none"
+              >
+                ×
+              </button>
+            </span>
+            <span className="text-xs text-gray-500">
+              showing only activities on this route
+            </span>
+          </div>
+        )}
         <MultiMetricSelector
           metrics={AVAILABLE_METRICS}
           selected={selectedMetrics}

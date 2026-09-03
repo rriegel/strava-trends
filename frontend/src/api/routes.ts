@@ -29,3 +29,8 @@ export async function getRouteClusters(): Promise<any[]> {
   const response = await apiClient.get('/routes/clusters')
   return response.data
 }
+
+export async function renameRoute(id: number, name: string): Promise<Route> {
+  const response = await apiClient.patch(`/routes/${id}`, { name })
+  return response.data
+}

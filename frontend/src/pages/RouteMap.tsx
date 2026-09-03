@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import mapboxgl from 'mapbox-gl'
 import polyline from '@mapbox/polyline'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { useRoutes } from '../hooks/useRoutes'
+import { useRoutes, useRenameRoute } from '../hooks/useRoutes'
 
 /**
  * Deterministic color per route id, so colors don't shuffle when the sort
@@ -31,7 +31,10 @@ export default function RouteMap() {
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null)
   const [hoveredRouteId, setHoveredRouteId] = useState<number | null>(null)
   const [routesTruncated, setRoutesTruncated] = useState(false)
+  const [renamingRouteId, setRenamingRouteId] = useState<number | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   const navigate = useNavigate()
+  const renameRouteMutation = useRenameRoute()
 
   const { data, isLoading, error } = useRoutes({ per_page: 100 })
   const routes = useMemo(() => data?.routes || [], [data])
@@ -123,7 +126,34 @@ export default function RouteMap() {
           paint: {
             'line-color': ['get', 'color'],
             'line-width': 4,
-            'line-opacity': 0.8,
+            // Zoom-aware opacity: thin/faint when zoomed out (many routes
+            // overlap), solid when zoomed in. 8 -> 12 covers city block
+            // to neighborhood zoom, where individual routes become readable
+            'line-opacity': [
+              'interpolate', ['linear'], ['zoom'],
+              8, 0.35,
+              12, 0.8,
+            ],
+          },
+        })
+
+        // Start-point dots: at low zoom a route collapses to a short line
+        // or vanishes entirely; a colored dot anchored at the route start
+        // keeps every route locatable from anywhere on the map. Colored
+        // per route (same palette as the sidebar), grows with zoom.
+        map.current.addLayer({
+          id: 'routes-start-dots',
+          type: 'circle',
+          source: 'routes',
+          paint: {
+            'circle-color': ['get', 'color'],
+            'circle-radius': [
+              'interpolate', ['linear'], ['zoom'],
+              8, 3,
+              14, 6,
+            ],
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#ffffff',
           },
         })
 
@@ -335,9 +365,43 @@ export default function RouteMap() {
                       className="w-3 h-3 rounded-full"
                       style={{ backgroundColor: color }}
                     />
-                    <h3 className="font-semibold text-gray-900">
-                      {route.name || `Route ${route.id}`}
-                    </h3>
+                    {renamingRouteId === route.id ? (
+                      <input
+                        type="text"
+                        value={renameValue}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const trimmed = renameValue.trim()
+                            if (trimmed) renameRouteMutation.mutate({ id: route.id, name: trimmed })
+                            setRenamingRouteId(null)
+                          } else if (e.key === 'Escape') {
+                            setRenamingRouteId(null)
+                          }
+                        }}
+                        onBlur={() => setRenamingRouteId(null)}
+                        className="font-semibold text-gray-900 border border-blue-400 rounded px-1 py-0.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        aria-label="Route name"
+                      />
+                    ) : (
+                      <h3 className="font-semibold text-gray-900">
+                        {route.name || `Route ${route.id}`}
+                      </h3>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`Rename ${route.name || `Route ${route.id}`}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setRenameValue(route.name || '')
+                        setRenamingRouteId(route.id)
+                      }}
+                      className="text-gray-400 hover:text-gray-600 text-sm"
+                    >
+                      ✎
+                    </button>
                   </div>
                 </div>
 
@@ -427,13 +491,22 @@ export default function RouteMap() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => navigate(`/activities?route_id=${selectedRoute.id}`)}
-              className="w-full px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-            >
-              View activities
-            </button>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => navigate(`/activities?route_id=${selectedRoute.id}`)}
+                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                View activities
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/trends?route_id=${selectedRoute.id}`)}
+                className="px-3 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-600 rounded-lg hover:bg-blue-50"
+              >
+                View activity trends
+              </button>
+            </div>
           </div>
         )}
       </div>

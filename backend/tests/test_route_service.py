@@ -273,3 +273,51 @@ class TestRoutesEndpoint:
         response = client.get("/routes")
         assert response.status_code == 200
         assert response.json()["routes"] == []
+
+    def test_rename_route(self, client, db_session, user):
+        activity = make_activity(user)
+        db_session.add(activity)
+        db_session.commit()
+        add_latlng_stream(db_session, activity, LOOP)
+        build_route_for_activity(db_session, activity)
+        db_session.commit()
+
+        route_id = db_session.query(Route).first().id
+
+        response = client.patch(f"/routes/{route_id}", json={"name": "Beecher Loop"})
+        assert response.status_code == 200
+        assert response.json()["name"] == "Beecher Loop"
+
+        # Persisted
+        db_session.expire_all()
+        assert db_session.query(Route).first().name == "Beecher Loop"
+
+    def test_rename_route_strips_whitespace(self, client, db_session, user):
+        activity = make_activity(user)
+        db_session.add(activity)
+        db_session.commit()
+        add_latlng_stream(db_session, activity, LOOP)
+        build_route_for_activity(db_session, activity)
+        db_session.commit()
+        route_id = db_session.query(Route).first().id
+
+        response = client.patch(f"/routes/{route_id}", json={"name": "  Padded Name  "})
+        assert response.status_code == 200
+        assert response.json()["name"] == "Padded Name"
+
+    def test_rename_route_rejects_whitespace_only_name(self, client, db_session, user):
+        activity = make_activity(user)
+        db_session.add(activity)
+        db_session.commit()
+        add_latlng_stream(db_session, activity, LOOP)
+        build_route_for_activity(db_session, activity)
+        db_session.commit()
+        route_id = db_session.query(Route).first().id
+
+        # Whitespace-only would strip to empty — endpoint must reject it
+        response = client.patch(f"/routes/{route_id}", json={"name": "   "})
+        assert response.status_code == 422
+
+    def test_rename_route_404(self, client, db_session, user):
+        response = client.patch("/routes/99999", json={"name": "Ghost"})
+        assert response.status_code == 404

@@ -5,6 +5,7 @@ export interface TrendParams {
   metric_type: string
   activity_type?: string
   distance_bucket?: string
+  route_id?: number
   start_date?: string
   end_date?: string
   aggregation?: 'daily' | 'weekly' | 'monthly'
@@ -15,6 +16,7 @@ export interface PercentileParams {
   metric_type: string
   activity_type: string
   distance_bucket?: string
+  route_id?: number
   start_date?: string
   end_date?: string
   percentiles?: string

@@ -53,7 +53,8 @@ class TrendsService:
         distance_bucket: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        aggregation: Optional[str] = None
+        aggregation: Optional[str] = None,
+        route_id: Optional[int] = None
     ) -> dict:
         """
         Get trend metrics for a specific metric type (in display units).
@@ -67,6 +68,7 @@ class TrendsService:
             start_date: Optional start date filter
             end_date: Optional end date filter
             aggregation: Aggregation period (daily, weekly, monthly)
+            route_id: Optional route filter — only activities on this route
 
         Returns:
             Dictionary with data_points, aggregated_data, trend and the metric's
@@ -83,6 +85,7 @@ class TrendsService:
                 distance_bucket=distance_bucket,
                 start_date=start_date,
                 end_date=end_date,
+                route_id=route_id,
             )
         else:
             triples = self._query_activity_metric(
@@ -92,6 +95,7 @@ class TrendsService:
                 distance_bucket=distance_bucket,
                 start_date=start_date,
                 end_date=end_date,
+                route_id=route_id,
             )
 
         return self._build_trend_response(
@@ -113,12 +117,15 @@ class TrendsService:
         distance_bucket: Optional[str],
         start_date: Optional[datetime],
         end_date: Optional[datetime],
+        route_id: Optional[int] = None,
     ) -> List[tuple]:
         """Fetch (date, raw_value, activity_id) triples for a metric stored on Activity."""
         query = self.db.query(Activity).filter(Activity.user_id == user_id)
 
         if activity_type:
             query = query.filter(Activity.type == activity_type)
+        if route_id:
+            query = query.filter(Activity.route_id == route_id)
         query = self._apply_date_filters(query, start_date, end_date, Activity.start_date)
         query = self._apply_distance_bucket(query, distance_bucket, Activity.distance)
         query = query.order_by(Activity.start_date)
@@ -138,6 +145,7 @@ class TrendsService:
         distance_bucket: Optional[str],
         start_date: Optional[datetime],
         end_date: Optional[datetime],
+        route_id: Optional[int] = None,
     ) -> List[tuple]:
         """Fetch (date, raw_value, activity_id) triples for a metric stored in ComputedMetric."""
         query = self.db.query(ComputedMetric, Activity).join(
@@ -149,6 +157,8 @@ class TrendsService:
 
         if activity_type:
             query = query.filter(Activity.type == activity_type)
+        if route_id:
+            query = query.filter(Activity.route_id == route_id)
         query = self._apply_date_filters(query, start_date, end_date, Activity.start_date)
         query = self._apply_distance_bucket(query, distance_bucket, Activity.distance)
         query = query.order_by(Activity.start_date)
@@ -244,7 +254,8 @@ class TrendsService:
         distance_bucket: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        aggregation: Optional[str] = None
+        aggregation: Optional[str] = None,
+        route_id: Optional[int] = None
     ) -> dict:
         """
         Get trend data for multiple metrics simultaneously
@@ -261,7 +272,8 @@ class TrendsService:
                 distance_bucket=distance_bucket,
                 start_date=start_date,
                 end_date=end_date,
-                aggregation=aggregation
+                aggregation=aggregation,
+                route_id=route_id
             )
 
         return {"metrics": results}
@@ -275,7 +287,8 @@ class TrendsService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         period: str = "weekly",
-        percentiles: List[int] = [10, 50, 90]
+        percentiles: List[int] = [10, 50, 90],
+        route_id: Optional[int] = None
     ) -> dict:
         """
         Get percentile distribution for a metric over time
@@ -290,7 +303,8 @@ class TrendsService:
             distance_bucket=distance_bucket,
             start_date=start_date,
             end_date=end_date,
-            aggregation=period
+            aggregation=period,
+            route_id=route_id
         )
 
         return {
