@@ -142,7 +142,16 @@ class FileUploadService:
         from services.computed_metrics_service import ComputedMetricsService
         metrics_service = ComputedMetricsService(self.db)
         metrics_service.compute_metrics_for_activity(activity.id)
-        
+
+        # Build/attach a Route from the GPS track. Non-fatal: a route
+        # failure must never fail the upload itself.
+        try:
+            from services.route_service import build_route_for_activity
+            build_route_for_activity(self.db, activity)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+
         return {
             "status": "success",
             "activity_id": activity.id,

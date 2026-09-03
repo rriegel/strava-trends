@@ -1,4 +1,4 @@
-.PHONY: dev stop backend frontend db db-test test clean help
+.PHONY: dev stop backend frontend db db-test test clean help backfill-routes
 
 # Default target
 help:
@@ -114,6 +114,11 @@ seed-dev:
 		VALUES (1, 0, 'dev', 'dev_token', 'dev_token', NOW() + INTERVAL '1 year') \
 		ON CONFLICT (id) DO NOTHING;" && \
 	echo "Dev user seeded (or already exists)"
+
+# Build routes from existing activities' GPS tracks (idempotent)
+backfill-routes:
+	@echo "Backfilling routes from activity GPS tracks..."
+	@cd backend && . .venv/bin/activate && python scripts/backfill_routes.py
 
 # Start backend
 backend: migrate seed-dev
