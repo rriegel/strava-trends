@@ -114,7 +114,7 @@ export default function Trends() {
     end_date: endDate || undefined,
   }
 
-  const { data: multiTrendData, isLoading: trendLoading, error: trendError } = useMultiTrend(
+  const { data: multiTrendData, isLoading: trendLoading, isPlaceholderData: trendPlaceholder, error: trendError } = useMultiTrend(
     selectedMetrics,
     trendParams
   )
@@ -174,6 +174,7 @@ export default function Trends() {
 
       {multiTrendData && (
         <>
+          <div className={`transition-opacity duration-200 ${trendPlaceholder ? 'opacity-60' : 'opacity-100'}`}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard
               title="Trend"
@@ -238,6 +239,7 @@ export default function Trends() {
               </div>
             </div>
           )}
+          </div>
         </>
       )}
     </div>
