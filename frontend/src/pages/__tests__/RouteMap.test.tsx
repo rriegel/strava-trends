@@ -93,10 +93,12 @@ vi.mock('mapbox-gl', () => {
 
 vi.mock('../../hooks/useRoutes', () => ({
   useRoutes: vi.fn(),
+  useRenameRoute: vi.fn(() => ({ mutate: vi.fn() })),
 }))
 
-const { useRoutes } = await import('../../hooks/useRoutes')
+const { useRoutes, useRenameRoute } = await import('../../hooks/useRoutes')
 const mockedUseRoutes = vi.mocked(useRoutes)
+const mockedUseRenameRoute = vi.mocked(useRenameRoute)
 
 const { default: RouteMap } = await import('../RouteMap')
 
@@ -165,6 +167,47 @@ describe('RouteMap', () => {
     await user.click(screen.getByText('View activities'))
     // useNavigate from the mocked router
     expect(navigateMock).toHaveBeenCalledWith('/activities?route_id=1')
+  })
+
+  it('navigates to route-filtered trends from popup button', async () => {
+    const user = userEvent.setup()
+    mockRoutes(ROUTES)
+    render(<RouteMap />)
+
+    await user.click(screen.getByText('River Loop'))
+    await user.click(screen.getByText('View activity trends'))
+    expect(navigateMock).toHaveBeenCalledWith('/trends?route_id=1')
+  })
+
+  it('starts inline rename from the pencil button and commits on Enter', async () => {
+    const user = userEvent.setup()
+    const mutateMock = vi.fn()
+    mockedUseRenameRoute.mockReturnValue({ mutate: mutateMock } as never)
+    mockRoutes(ROUTES)
+    render(<RouteMap />)
+
+    await user.click(screen.getByRole('button', { name: 'Rename River Loop' }))
+    const input = screen.getByLabelText('Route name') as HTMLInputElement
+    expect(input.value).toBe('River Loop')
+
+    await user.clear(input)
+    await user.type(input, 'Beecher Loop{Enter}')
+    expect(mutateMock).toHaveBeenCalledTimes(1)
+    expect(mutateMock).toHaveBeenCalledWith({ id: 1, name: 'Beecher Loop' })
+  })
+
+  it('cancels rename on Escape without calling the mutation', async () => {
+    const user = userEvent.setup()
+    const mutateMock = vi.fn()
+    mockedUseRenameRoute.mockReturnValue({ mutate: mutateMock } as never)
+    mockRoutes(ROUTES)
+    render(<RouteMap />)
+
+    await user.click(screen.getByRole('button', { name: 'Rename Hill Route' }))
+    await user.type(screen.getByLabelText('Route name'), 'x{Escape}')
+    expect(mutateMock).not.toHaveBeenCalled()
+    // Original name still shown
+    expect(screen.getByText('Hill Route')).toBeInTheDocument()
   })
 
   it('shows empty state when no routes', () => {

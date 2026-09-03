@@ -304,9 +304,48 @@ class TestMultiMetricTrend:
         assert "metrics" in data
         assert "average_speed" in data["metrics"]
         assert "average_heartrate" in data["metrics"]
-        
+
         assert len(data["metrics"]["average_speed"]["data_points"]) == 5
         assert len(data["metrics"]["average_heartrate"]["data_points"]) == 5
+
+    def test_get_multi_metric_trend_route_filter(self, client, db_session, sample_user):
+        """route_id filter limits data points to activities on that route"""
+        from models.route import Route
+
+        route_a = Route(name="River Loop", polyline="a", polyline_hash="hash_a", distance=5000.0, activity_count=0)
+        route_b = Route(name="Hill Route", polyline="b", polyline_hash="hash_b", activity_count=0)
+        db_session.add_all([route_a, route_b])
+        db_session.commit()
+
+        # 3 activities on route_a, 2 on route_b
+        for i in range(5):
+            activity = Activity(
+                user_id=sample_user.id,
+                source="strava",
+                source_id=f"strava_{i}",
+                name=f"Run {i}",
+                type="Run",
+                start_date=datetime(2024, 1, 1) + timedelta(days=i*7),
+                start_date_local=datetime(2024, 1, 1) + timedelta(days=i*7),
+                moving_time=1800,
+                distance=5000.0,
+                average_speed=2.5 + i * 0.1,
+                route_id=route_a.id if i < 3 else route_b.id,
+            )
+            db_session.add(activity)
+
+        db_session.commit()
+
+        response = client.get(f"/trends/metrics/multi?metric_types=average_speed&route_id={route_a.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["metrics"]["average_speed"]["data_points"]) == 3
+
+        # Other route still returns its own data
+        response = client.get(f"/trends/metrics/multi?metric_types=average_speed&route_id={route_b.id}")
+        assert response.status_code == 200
+        assert len(response.json()["metrics"]["average_speed"]["data_points"]) == 2
 
 
 class TestPercentileBands:

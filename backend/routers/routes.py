@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Optional
 from database import get_db
@@ -8,7 +9,7 @@ from models.activity import Activity
 
 router = APIRouter()
 
-@router.get("/")
+@router.get("")
 async def list_routes(
     sort_by: str = Query("activity_count", description="Sort: activity_count, distance, elevation_gain"),
     sort_order: str = Query("desc"),
@@ -98,6 +99,43 @@ async def get_route(route_id: int, db: Session = Depends(get_db)):
             "average_heartrate": {"slope": 0, "direction": "stable"}
         }
     }
+
+class RouteRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+
+
+@router.patch("/{route_id}")
+async def rename_route(
+    route_id: int,
+    payload: RouteRenameRequest,
+    db: Session = Depends(get_db),
+):
+    """Rename a route (user-facing label; does not affect matching)"""
+    # Validate AFTER stripping so whitespace-only names can't sneak through
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Route name cannot be empty")
+
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if not route:
+        raise HTTPException(status_code=404, detail="Route not found")
+
+    route.name = name
+    db.commit()
+    db.refresh(route)
+
+    return {
+        "id": route.id,
+        "name": route.name,
+        "distance": route.distance,
+        "elevation_gain": route.elevation_gain,
+        "activity_count": route.activity_count,
+        "cluster_id": route.cluster_id,
+        "start_lat": route.start_lat,
+        "start_lng": route.start_lng,
+        "polyline": route.polyline,
+    }
+
 
 @router.get("/clusters/{cluster_id}")
 async def get_route_cluster(cluster_id: int, db: Session = Depends(get_db)):
