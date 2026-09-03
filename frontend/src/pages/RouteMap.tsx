@@ -1,28 +1,44 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import mapboxgl from 'mapbox-gl'
 import polyline from '@mapbox/polyline'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { useRoutes } from '../hooks/useRoutes'
 
-const ROUTE_COLORS = [
-  '#ff6b35', // Strava orange
-  '#3b82f6', // blue
-  '#10b981', // green
-  '#8b5cf6', // purple
-  '#f59e0b', // amber
-  '#ef4444', // red
-  '#06b6d4', // cyan
-  '#ec4899', // pink
-]
+/**
+ * Deterministic color per route id, so colors don't shuffle when the sort
+ * order or page of routes changes. Cycles after 8 ids.
+ */
+function routeColor(routeId: number): string {
+  const ROUTE_COLORS = [
+    '#ff6b35', // Strava orange
+    '#3b82f6', // blue
+    '#10b981', // green
+    '#8b5cf6', // purple
+    '#f59e0b', // amber
+    '#ef4444', // red
+    '#06b6d4', // cyan
+    '#ec4899', // pink
+  ]
+  // Hash to spread similar ids apart while staying deterministic
+  const idx = (routeId * 7) % ROUTE_COLORS.length
+  return ROUTE_COLORS[idx]
+}
 
 export default function RouteMap() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<mapboxgl.Map | null>(null)
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null)
   const [hoveredRouteId, setHoveredRouteId] = useState<number | null>(null)
+  const [routesTruncated, setRoutesTruncated] = useState(false)
+  const navigate = useNavigate()
 
   const { data, isLoading, error } = useRoutes({ per_page: 100 })
-  const routes = data?.routes || []
+  const routes = useMemo(() => data?.routes || [], [data])
+  const selectedRoute = useMemo(
+    () => routes.find((r) => r.id === selectedRouteId) || null,
+    [routes, selectedRouteId]
+  )
 
   // Initialize map
   useEffect(() => {
@@ -59,10 +75,10 @@ export default function RouteMap() {
       if (!map.current) return
 
       // Decode all polylines and build GeoJSON
-      const features = routes.map((route, index) => {
+      const features = routes.map((route) => {
         const decoded = polyline.decode(route.polyline)
         const coordinates = decoded.map(([lat, lng]) => [lng, lat])
-        const color = ROUTE_COLORS[index % ROUTE_COLORS.length]
+        const color = routeColor(route.id)
 
         return {
           type: 'Feature' as const,
@@ -170,6 +186,29 @@ export default function RouteMap() {
     }
   }, [routes])
 
+  // If the API returned exactly the page size, there may be more routes.
+  // Sidebar concern — must fire even when the map never initialized
+  // (no Mapbox token in CI), so it can't live in the map-drawing effect.
+  useEffect(() => {
+    setRoutesTruncated(routes.length >= 100)
+  }, [routes])
+
+  // Zoom to fit all visible routes (used on initial load and "Fit all" button)
+  const fitAllRoutes = () => {
+    if (!map.current || routes.length === 0) return
+    const allCoords = routes.flatMap((route) =>
+      polyline.decode(route.polyline).map(([lat, lng]) => [lng, lat] as [number, number])
+    )
+    if (allCoords.length === 0) return
+    const lats = allCoords.map((c) => c[1])
+    const lngs = allCoords.map((c) => c[0])
+    const bounds: mapboxgl.LngLatBoundsLike = [
+      [Math.min(...lngs), Math.min(...lats)],
+      [Math.max(...lngs), Math.max(...lats)],
+    ]
+    map.current.fitBounds(bounds, { padding: 50 })
+  }
+
   // Highlight selected route
   useEffect(() => {
     if (!map.current || !map.current.isStyleLoaded()) return
@@ -201,10 +240,25 @@ export default function RouteMap() {
       {/* Sidebar */}
       <div className="w-96 bg-white border-r overflow-y-auto">
         <div className="p-4 border-b">
-          <h1 className="text-2xl font-bold text-gray-900">Routes</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">Routes</h1>
+            <button
+              type="button"
+              onClick={fitAllRoutes}
+              disabled={routes.length === 0}
+              className="px-3 py-1 text-sm border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Fit all routes
+            </button>
+          </div>
           <p className="text-sm text-gray-600 mt-1">
             {routes.length} route{routes.length !== 1 ? 's' : ''} discovered
           </p>
+          {routesTruncated && (
+            <p className="text-xs text-amber-600 mt-1">
+              Showing first 100 routes — refine with more activities or filters
+            </p>
+          )}
         </div>
 
         {isLoading && (
@@ -220,8 +274,8 @@ export default function RouteMap() {
         )}
 
         <div className="divide-y">
-          {routes.map((route, index) => {
-            const color = ROUTE_COLORS[index % ROUTE_COLORS.length]
+          {routes.map((route) => {
+            const color = routeColor(route.id)
             const isSelected = selectedRouteId === route.id
             const isHovered = hoveredRouteId === route.id
 
@@ -292,6 +346,60 @@ export default function RouteMap() {
           </div>
         )}
         <div ref={mapContainer} className="w-full h-full" />
+
+        {/* Route detail popup */}
+        {selectedRoute && (
+          <div className="absolute bottom-4 left-4 right-4 md:right-auto md:w-96 bg-white rounded-lg shadow-lg border p-4 z-20">
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: routeColor(selectedRoute.id) }}
+                />
+                <h3 className="font-semibold text-gray-900">
+                  {selectedRoute.name || `Route ${selectedRoute.id}`}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedRouteId(null)}
+                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+                aria-label="Close route details"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 text-sm mb-4">
+              <div>
+                <div className="text-gray-500 text-xs">Distance</div>
+                <div className="font-medium text-gray-900">
+                  {formatDistance(selectedRoute.distance)}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-xs">Elevation</div>
+                <div className="font-medium text-gray-900">
+                  {formatElevation(selectedRoute.elevation_gain)}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-xs">Activities</div>
+                <div className="font-medium text-gray-900">
+                  {selectedRoute.activity_count}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => navigate(`/activities?route_id=${selectedRoute.id}`)}
+              className="w-full px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
+              View activities
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -23,7 +23,7 @@ async def get_activity_calendar(
         end_date = datetime.now(timezone.utc)
     if not start_date:
         start_date = end_date - timedelta(days=365)
-    
+
     query = db.query(
         cast(Activity.start_date_local, Date).label('date'),
         func.count(Activity.id).label('count'),
@@ -38,9 +38,9 @@ async def get_activity_calendar(
     ).order_by(
         cast(Activity.start_date_local, Date)
     )
-    
+
     results = query.all()
-    
+
     # Build response
     calendar_data = []
     for row in results:
@@ -51,19 +51,80 @@ async def get_activity_calendar(
             value = int(row.count)
         elif metric == 'moving_time':
             value = int(row.total_moving_time or 0)
-        
+
         calendar_data.append({
             'date': row.date.isoformat(),
             'value': value,
             'count': int(row.count)
         })
-    
+
+    # Summary stats for the dashboard stat cards
+    total_activities = sum(int(row.count) for row in results)
+    total_distance = float(sum(row.total_distance or 0 for row in results))
+    total_moving_time = int(sum(row.total_moving_time or 0 for row in results))
+    longest_streak = _longest_streak([row.date for row in results])
+    most_active_day = _most_active_weekday(results)
+
     return {
         'metric': metric,
         'data': calendar_data,
         'start_date': start_date.date().isoformat(),
-        'end_date': end_date.date().isoformat()
+        'end_date': end_date.date().isoformat(),
+        'summary': {
+            'total_activities': total_activities,
+            'total_distance': total_distance,
+            'total_moving_time': total_moving_time,
+            'longest_streak': longest_streak,
+            'most_active_day': most_active_day,
+        }
     }
+
+
+def _longest_streak(dates: list) -> int:
+    """
+    Longest run of consecutive days with at least one activity.
+
+    Args:
+        dates: Sorted list of date objects (one per day with activities)
+    Returns:
+        Length of the longest consecutive-day streak (0 if no activities)
+    """
+    if not dates:
+        return 0
+
+    longest = 1
+    current = 1
+    for prev, curr in zip(dates, dates[1:]):
+        gap = (curr - prev).days
+        if gap == 1:
+            current += 1
+            longest = max(longest, current)
+        elif gap > 1:
+            current = 1
+        # gap == 0 shouldn't happen (grouped by date) but is a no-op either way
+    return longest
+
+
+def _most_active_weekday(rows: list) -> str:
+    """
+    Weekday name with the highest total activity count across the range.
+
+    Args:
+        rows: Query rows with .date (the day) and .count (activities that day)
+    Returns:
+        Weekday name (e.g. "Saturday"), or "" if no activities
+    """
+    counts_by_weekday: dict = {}
+    for row in rows:
+        if row.count:
+            weekday = row.date.weekday()  # Monday=0 .. Sunday=6
+            counts_by_weekday[weekday] = counts_by_weekday.get(weekday, 0) + int(row.count)
+
+    if not counts_by_weekday:
+        return ""
+
+    top = max(counts_by_weekday, key=lambda wd: counts_by_weekday[wd])
+    return ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][top]
 
 @router.get("/")
 async def list_activities(

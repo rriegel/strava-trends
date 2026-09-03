@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMultiTrend, usePercentileBands } from '../hooks/useTrends'
 import MultiMetricChart from '../components/MultiMetricChart'
 import MultiMetricSelector, { AVAILABLE_METRICS } from '../components/MultiMetricSelector'
@@ -6,27 +7,95 @@ import TrendFilters from '../components/TrendFilters'
 import StatCard from '../components/StatCard'
 import { formatPaceDecimal, isPaceDisplay } from '../utils/format'
 
-export default function Trends() {
-  const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['average_speed'])
-  const [activityType, setActivityType] = useState('')
-  const [distanceBucket, setDistanceBucket] = useState('')
-  const [aggregation, setAggregation] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+const VALID_METRICS = new Set(AVAILABLE_METRICS.map((m) => m.value))
+const VALID_AGGREGATIONS = new Set(['daily', 'weekly', 'monthly'])
 
-  const trendParams = {
-    activity_type: activityType || undefined,
-    distance_bucket: distanceBucket || undefined,
-    aggregation,
-    start_date: startDate || undefined,
-    end_date: endDate || undefined,
+/**
+ * Read filter state from URL query params (shareable links / back button).
+ * Invalid or missing values fall back to the same defaults as before.
+ */
+function filtersFromParams(params: URLSearchParams): {
+  metrics: string[]
+  activityType: string
+  distanceBucket: string
+  aggregation: 'daily' | 'weekly' | 'monthly'
+  startDate: string
+  endDate: string
+} {
+  const metrics = (params.get('metrics') || 'average_speed')
+    .split(',')
+    .filter((m) => VALID_METRICS.has(m))
+  const aggregationParam = params.get('aggregation') || 'weekly'
+
+  return {
+    metrics: metrics.length > 0 ? metrics : ['average_speed'],
+    activityType: params.get('type') || '',
+    distanceBucket: params.get('bucket') || '',
+    aggregation: (VALID_AGGREGATIONS.has(aggregationParam) ? aggregationParam : 'weekly') as 'daily' | 'weekly' | 'monthly',
+    startDate: params.get('start') || '',
+    endDate: params.get('end') || '',
+  }
+}
+
+export default function Trends() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const filters = filtersFromParams(searchParams)
+
+  const selectedMetrics = filters.metrics
+  const activityType = filters.activityType
+  const distanceBucket = filters.distanceBucket
+  const aggregation = filters.aggregation
+  const startDate = filters.startDate
+  const endDate = filters.endDate
+
+  // Sync filter state -> URL (shareable links, back/forward works).
+  // setSearchParams accepts a callback form (like setState) so consecutive
+  // updates compose correctly — e.g. the date-range presets set start and
+  // end in one logical update. Using the current searchParams directly here
+  // would make the second call clobber the first (stale read).
+  const setFilters = (updates: Record<string, string | string[]>) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        Object.entries(updates).forEach(([key, value]) => {
+          const serialized = Array.isArray(value) ? value.join(',') : value
+          if (serialized) {
+            next.set(key, serialized)
+          } else {
+            next.delete(key)
+          }
+        })
+        return next
+      },
+      { replace: true }
+    )
   }
 
+  const setSelectedMetrics = (metrics: string[]) => setFilters({ metrics })
+  const setActivityType = (type: string) => setFilters({ type })
+  const setDistanceBucket = (bucket: string) => setFilters({ bucket })
+  const setAggregation = (agg: string) => setFilters({ aggregation: agg })
+  const setStartDate = (start: string) => setFilters({ start })
+  const setEndDate = (end: string) => setFilters({ end })
+  // One user action = one setSearchParams call. The date presets need to set
+  // start and end together; two consecutive setFilters calls would race because
+  // react-router's setSearchParams callback form reads the render-closure
+  // searchParams (not accumulated state), so the second call would clobber the
+  // first under { replace: true }.
+  const setDateRange = (startDate: string, endDate: string) =>
+    setFilters({ start: startDate, end: endDate })
+
+  // Keep the URL in sync on first mount if params are missing entirely,
+  // so a bare /trends link immediately becomes shareable
+  useEffect(() => {
+    if (![...searchParams.keys()].some((k) => ['metrics', 'type', 'bucket', 'aggregation', 'start', 'end'].includes(k))) {
+      setSearchParams(new URLSearchParams({ metrics: selectedMetrics.join(',') }), { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const clearFilters = () => {
-    setActivityType('')
-    setDistanceBucket('')
-    setStartDate('')
-    setEndDate('')
+    setSearchParams(new URLSearchParams({ metrics: selectedMetrics.join(',') }), { replace: true })
   }
 
   // Use the first selected metric for the summary stat cards
@@ -37,7 +106,15 @@ export default function Trends() {
     distance_bucket: distanceBucket || undefined,
   }
 
-  const { data: multiTrendData, isLoading: trendLoading, error: trendError } = useMultiTrend(
+  const trendParams = {
+    activity_type: activityType || undefined,
+    distance_bucket: distanceBucket || undefined,
+    aggregation,
+    start_date: startDate || undefined,
+    end_date: endDate || undefined,
+  }
+
+  const { data: multiTrendData, isLoading: trendLoading, isPlaceholderData: trendPlaceholder, error: trendError } = useMultiTrend(
     selectedMetrics,
     trendParams
   )
@@ -78,6 +155,7 @@ export default function Trends() {
           onAggregationChange={(v) => setAggregation(v as 'daily' | 'weekly' | 'monthly')}
           onStartDateChange={setStartDate}
           onEndDateChange={setEndDate}
+          onDateRangeChange={setDateRange}
           onClearFilters={clearFilters}
         />
       </div>
@@ -96,6 +174,7 @@ export default function Trends() {
 
       {multiTrendData && (
         <>
+          <div className={`transition-opacity duration-200 ${trendPlaceholder ? 'opacity-60' : 'opacity-100'}`}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard
               title="Trend"
@@ -160,6 +239,7 @@ export default function Trends() {
               </div>
             </div>
           )}
+          </div>
         </>
       )}
     </div>

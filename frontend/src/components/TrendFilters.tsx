@@ -9,6 +9,7 @@ interface TrendFiltersProps {
   onAggregationChange: (value: string) => void
   onStartDateChange: (value: string) => void
   onEndDateChange: (value: string) => void
+  onDateRangeChange: (startDate: string, endDate: string) => void
   onClearFilters: () => void
 }
 
@@ -23,16 +24,21 @@ export default function TrendFilters({
   onAggregationChange,
   onStartDateChange,
   onEndDateChange,
+  onDateRangeChange,
   onClearFilters,
 }: TrendFiltersProps) {
   const hasActiveFilters = activityType || distanceBucket || startDate || endDate
 
-  const setDateRange = (days: number) => {
+  const applyPreset = (days: number | null) => {
+    if (days === null) {
+      // "All time": clear both bounds in one update
+      onDateRangeChange('', '')
+      return
+    }
     const end = new Date()
     const start = new Date()
     start.setDate(start.getDate() - days)
-    onStartDateChange(start.toISOString().split('T')[0])
-    onEndDateChange(end.toISOString().split('T')[0])
+    onDateRangeChange(start.toISOString().split('T')[0], end.toISOString().split('T')[0])
   }
 
   return (
@@ -112,31 +118,28 @@ export default function TrendFilters({
         <span className="text-sm font-medium text-gray-700">Quick presets:</span>
         <button
           type="button"
-          onClick={() => setDateRange(30)}
+          onClick={() => applyPreset(30)}
           className="px-3 py-1 text-sm border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           Last 30 days
         </button>
         <button
           type="button"
-          onClick={() => setDateRange(90)}
+          onClick={() => applyPreset(90)}
           className="px-3 py-1 text-sm border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           Last 3 months
         </button>
         <button
           type="button"
-          onClick={() => setDateRange(365)}
+          onClick={() => applyPreset(365)}
           className="px-3 py-1 text-sm border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           Last year
         </button>
         <button
           type="button"
-          onClick={() => {
-            onStartDateChange('')
-            onEndDateChange('')
-          }}
+          onClick={() => applyPreset(null)}
           className="px-3 py-1 text-sm border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           All time
