@@ -209,18 +209,54 @@ export default function RouteMap() {
     map.current.fitBounds(bounds, { padding: 50 })
   }
 
-  // Highlight selected route
+  // Highlight selected route and fly the camera to it. The sidebar and
+  // the map polyline click handler both set selectedRouteId, so both
+  // paths get focus + highlight from this single effect.
   useEffect(() => {
-    if (!map.current || !map.current.isStyleLoaded()) return
+    const mbMap = map.current
+    if (!mbMap) return
 
     if (selectedRouteId) {
-      map.current.setFilter('routes-line', ['==', ['get', 'id'], selectedRouteId])
-      map.current.setPaintProperty('routes-line', 'line-width', 6)
-      map.current.setPaintProperty('routes-line', 'line-opacity', 1)
+      const route = routes.find((r) => r.id === selectedRouteId)
+      if (route?.polyline) {
+        try {
+          const coords = polyline
+            .decode(route.polyline)
+            .map(([lat, lng]) => [lng, lat] as [number, number])
+          if (coords.length > 0) {
+            const lats = coords.map((c) => c[1])
+            const lngs = coords.map((c) => c[0])
+            const bounds: mapboxgl.LngLatBoundsLike = [
+              [Math.min(...lngs), Math.min(...lats)],
+              [Math.max(...lngs), Math.max(...lats)],
+            ]
+            // maxZoom keeps short routes from being blown up to
+            // block-level zoom on focus
+            mbMap.fitBounds(bounds, { padding: 100, maxZoom: 16 })
+          }
+        } catch {
+          // malformed polyline — skip focus, highlight still applies
+        }
+      }
+    }
+  }, [selectedRouteId, routes])
+
+  // Apply/clear the selected-route line styling separately from camera
+  // movement, and re-apply whenever the routes layer (re)loads — the
+  // layer is recreated by the routes effect, so a style-only effect that
+  // runs once would silently no-op on the brand-new layer.
+  useEffect(() => {
+    const mbMap = map.current
+    if (!mbMap || !mbMap.isStyleLoaded()) return
+
+    if (selectedRouteId) {
+      mbMap.setFilter('routes-line', ['==', ['get', 'id'], selectedRouteId])
+      mbMap.setPaintProperty('routes-line', 'line-width', 6)
+      mbMap.setPaintProperty('routes-line', 'line-opacity', 1)
     } else {
-      map.current.setFilter('routes-line', null)
-      map.current.setPaintProperty('routes-line', 'line-width', 4)
-      map.current.setPaintProperty('routes-line', 'line-opacity', 0.8)
+      mbMap.setFilter('routes-line', null)
+      mbMap.setPaintProperty('routes-line', 'line-width', 4)
+      mbMap.setPaintProperty('routes-line', 'line-opacity', 0.8)
     }
   }, [selectedRouteId])
 

@@ -8,7 +8,7 @@ from models.activity import Activity
 
 router = APIRouter()
 
-@router.get("/")
+@router.get("")
 async def list_routes(
     sort_by: str = Query("activity_count", description="Sort: activity_count, distance, elevation_gain"),
     sort_order: str = Query("desc"),
