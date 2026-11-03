@@ -1,9 +1,10 @@
-.PHONY: dev stop backend frontend db db-test test status clean help backfill-routes
+.PHONY: dev setup stop backend frontend db db-test test status clean help backfill-routes
 
 # Default target
 help:
 	@echo "Strava Trends Development Commands"
 	@echo ""
+	@echo "  make setup      - First-time setup: venv, deps, .env files, npm ci"
 	@echo "  make dev        - Start all services (dev DB + backend + frontend)"
 	@echo "  make stop       - Stop all running services"
 	@echo "  make status     - Check what's running"
@@ -14,6 +15,40 @@ help:
 	@echo "  make test       - Run test suite (starts test DB automatically)"
 	@echo "  make clean      - Stop services and remove all containers/volumes"
 	@echo ""
+
+# First-time setup: venv + deps + .env files + npm ci (idempotent)
+setup:
+	@echo "Setting up backend..."
+	@cd backend && \
+		if [ -d .venv ]; then \
+			echo "  .venv already exists"; \
+		elif command -v uv >/dev/null 2>&1; then \
+			echo "  creating venv with uv..."; \
+			uv venv .venv && \
+			uv pip install --python .venv/bin/python -q -r requirements.txt; \
+		else \
+			echo "  creating venv with python3..."; \
+			python3 -m venv .venv && \
+			. .venv/bin/activate && \
+			pip install -q -r requirements.txt; \
+		fi && \
+		if [ -f .env ]; then \
+			echo "  .env already exists (left untouched)"; \
+		else \
+			echo "  copying .env.example -> .env"; \
+			cp .env.example .env; \
+		fi
+	@echo "Setting up frontend..."
+	@cd frontend && \
+		( npm ci || ( echo "npm ci failed — try: npm install --legacy-peer-deps (see README Troubleshooting)" && exit 1 ) ) && \
+		if [ -f .env ]; then \
+			echo "  .env already exists (left untouched)"; \
+		else \
+			echo "  copying .env.example -> .env"; \
+			cp .env.example .env; \
+		fi
+	@echo ""
+	@echo "Setup complete. Next: make dev"
 
 # Start all services
 dev: db backend frontend
