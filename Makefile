@@ -1,4 +1,4 @@
-.PHONY: dev stop backend frontend db db-test test clean help backfill-routes
+.PHONY: dev stop backend frontend db db-test test status clean help backfill-routes
 
 # Default target
 help:
@@ -6,6 +6,7 @@ help:
 	@echo ""
 	@echo "  make dev        - Start all services (dev DB + backend + frontend)"
 	@echo "  make stop       - Stop all running services"
+	@echo "  make status     - Check what's running"
 	@echo "  make backend    - Start backend only (port 8000)"
 	@echo "  make frontend   - Start frontend only (port 3001)"
 	@echo "  make db         - Start dev database only (port 5432)"
@@ -153,10 +154,10 @@ status:
 	@echo "Checking service status..."
 	@echo ""
 	@echo "Dev Database (strava-trends-db):"
-	@docker ps --filter name=strava-trends-db --format "  {{.Status}}" 2>/dev/null || echo "  Not running"
+	@docker ps --filter name=strava-trends-db --format "  {{.Status}}" 2>/dev/null | grep . || echo "  Not running"
 	@echo ""
 	@echo "Test Database (strava-trends-test-db):"
-	@docker ps --filter name=strava-trends-test-db --format "  {{.Status}}" 2>/dev/null || echo "  Not running"
+	@docker ps --filter name=strava-trends-test-db --format "  {{.Status}}" 2>/dev/null | grep . || echo "  Not running"
 	@echo ""
 	@echo "Backend (port 8000):"
 	@ss -tlnp 2>/dev/null | grep ':8000 ' || lsof -i :8000 2>/dev/null | grep LISTEN || echo "  Not running"

@@ -16,7 +16,7 @@ Fitness analytics platform that surfaces trends across activities over time. Str
 | Backend | Python 3.11+, FastAPI, SQLAlchemy, pandas |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | Database | PostgreSQL 15 |
-| Charts | Plotly, Recharts |
+| Charts | Recharts |
 | Maps | Mapbox GL |
 | Testing | pytest (backend), Vitest + React Testing Library (frontend) |
 
@@ -24,77 +24,86 @@ Fitness analytics platform that surfaces trends across activities over time. Str
 
 - Python 3.11+
 - Node.js 18+ and npm
-- PostgreSQL 15+
+- Docker (runs both PostgreSQL containers — no local Postgres install needed)
 - (Optional) Strava API credentials for OAuth sync
+- (Optional) Mapbox access token for route map tiles
+
+## The Two Databases
+
+There are **two separate PostgreSQL databases**, and mixing them up is the #1 setup mistake:
+
+| | Dev database | Test database |
+|---|---|---|
+| Port | **5432** | **5433** |
+| Credentials | `postgres:postgres` | `test_user:test_password` |
+| Database name | `strava_trends` | `strava_trends_test` |
+| Compose file | `docker-compose.yml` | `docker-compose.test.yml` |
+| Used by | The running app (`make dev` / `make backend`) | `make test` / pytest **only** |
+
+**The rule:** `backend/.env` always points at the **dev database (5432)**. Never at the test database. The test database is fully self-managed — `make test` starts it, pytest resets its schema on every run, and pytest ignores `backend/.env` entirely (it uses its own hardcoded test-DB URL). Pointing your dev backend at 5433 will get you a database with no tables.
 
 ## Quick Start
 
-Use the Makefile for unified start/stop commands:
+```bash
+# 1. Clone and configure
+git clone https://github.com/rriegel/strava-trends.git
+cd strava-trends
+cp backend/.env.example backend/.env   # defaults match the dev DB below — no edits needed
+
+# 2. Start everything (dev DB + migrations + dev user + backend + frontend)
+make dev
+
+# Frontend: http://localhost:3001
+# API docs: http://localhost:8000/docs
+```
+
+Useful commands:
 
 ```bash
 make dev        # Start everything (DB + backend + frontend)
 make stop       # Stop all services
 make status     # Check what's running
-make test       # Run test suite
+make test       # Run test suite (auto-starts the test DB)
+make help       # All commands
 ```
 
-Run `make help` for all available commands.
+## Local Development (step by step)
 
-## Local Development
+### 1. Database
 
-### 1. Clone the repo
+**Option A: Docker Compose (recommended)** — matches the `backend/.env` defaults exactly:
 
 ```bash
-git clone https://github.com/rriegel/strava-trends.git
-cd strava-trends
+make db          # equivalent to: docker compose up -d
 ```
 
-### 2. Database
+This runs `postgres:15-alpine` on **port 5432** with user `postgres`, password `postgres`, database `strava_trends`. (These credentials are local-only — the container is not exposed beyond localhost.)
 
-**Option A: Use Docker Compose (recommended)**
+**Option B: Manual PostgreSQL / existing server**
 
-Start the test database (port 5433):
+Create a database and user, then point `backend/.env` at it:
 
 ```bash
-docker compose -f docker-compose.test.yml up -d
+DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<dbname>
 ```
 
-Then update `backend/.env` to match the test DB credentials:
-
-```bash
-DATABASE_URL=postgresql://test_user:test_password@localhost:5433/strava_trends_test
-```
-
-**Option B: Manual PostgreSQL setup**
-
-```bash
-createdb strava_trends
-```
-
-Or use Docker with matching credentials:
+Or spin up a matching disposable container yourself:
 
 ```bash
 docker run -d --name strava-trends-db \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=strava_trends \
-  -p 5433:5432 \
+  -p 5432:5432 \
   postgres:15-alpine
 ```
 
-Then ensure `backend/.env` has:
+> ⚠️ **Do not point `backend/.env` at port 5433** — that's the pytest database (`docker-compose.test.yml`). It exists only for `make test`, gets its tables dropped/recreated on every test run, and is normally empty. A dev backend pointed at it will fail with `relation "activities" does not exist`.
 
-```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost/strava_trends
-```
-
-### 3. Backend
+### 2. Backend
 
 ```bash
 cd backend
-
-# if encountering venv not found issues, reset it
-rm -rf .venv
 
 # Create virtual environment (use uv if python3-venv is not installed)
 python3 -m venv .venv
@@ -104,10 +113,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # Configure environment
-cp .env.example .env
-# Edit .env with your database URL (must match your DB credentials from step 2)
+cp .env.example .env    # DATABASE_URL default matches the compose dev DB (port 5432)
 
-# Run database migrations
+# Run migrations (requires the dev DB from step 1 to be running)
 alembic upgrade head
 
 # Start the server
@@ -116,13 +124,17 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 The API is available at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
 
-### 4. Frontend
+`make backend` (part of `make dev`) automates this: migrations, dev-user seed, and server start with logs at `/tmp/strava-trends-backend.log`.
+
+A dev user (`id=1`, username `dev`) is seeded automatically by `make dev` / `make backend`.
+
+### 3. Frontend
 
 ```bash
 cd frontend
 
-# Install dependencies
-npm install
+# Install dependencies — npm ci installs exactly from package-lock.json (known-good)
+npm ci
 
 # Start dev server
 npm run dev
@@ -130,40 +142,48 @@ npm run dev
 
 The frontend is available at `http://localhost:3001`.
 
+Notes:
+
+- **API access:** the Vite dev server proxies `/api/*` to `http://localhost:8000`, so no CORS configuration is needed in development.
+- **Mapbox:** route-map tiles need a token — `cp .env.example .env` in `frontend/` and set `VITE_MAPBOX_TOKEN` (free at mapbox.com). Without it, map pages load but show no tile layer.
+- If `npm ci` / `npm install` crashes with an arborist error like `Cannot read properties of null (reading 'edgesOut')` (an npm bug with this dependency set on some npm versions), retry with `npm install --legacy-peer-deps`.
+
 ## Environment Variables
 
-### Backend (`.env`)
+### Backend (`backend/.env`)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:***@localhost/strava_trends` |
+| `DATABASE_URL` | PostgreSQL connection string (**dev DB**, port 5432) | `postgresql://postgres:postgres@localhost:5432/strava_trends` |
 | `STRAVA_CLIENT_ID` | Strava API OAuth client ID | — |
 | `STRAVA_CLIENT_SECRET` | Strava API OAuth client secret | — |
 | `STRAVA_REDIRECT_URI` | OAuth callback URL | `http://localhost:8000/auth/strava/callback` |
-| `SECRET_KEY` | JWT signing key | `change-this-in-production` |
-| `CORS_ORIGINS` | Allowed frontend origins | `["http://localhost:3001"]` |
+| `SECRET_KEY` | JWT signing key | `change-this-in-production` (dev only) |
+| `CORS_ORIGINS` | Allowed frontend origins (only relevant without the Vite proxy) | `["http://localhost:5173","http://localhost:3000"]` |
+| `RATE_LIMIT_PER_MINUTE` | API rate limit | `100` |
+
+### Frontend (`frontend/.env`)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VITE_MAPBOX_TOKEN` | Mapbox access token for route-map tiles | — |
 
 ## Running Tests
 
-### Backend
+```bash
+make test
+```
 
-Tests run against a dedicated PostgreSQL test database. Start it with:
+starts the test database (port 5433) automatically, runs backend pytest, then frontend Vitest. Test databases are disposable: pytest drops and recreates all tables per test, and `backend/.env` is ignored — the suite always targets `strava_trends_test` on 5433.
+
+Manual equivalent:
 
 ```bash
+# Backend
 docker compose -f docker-compose.test.yml up -d
-```
+cd backend && source .venv/bin/activate && pytest
 
-Then run the test suite:
-
-```bash
-cd backend
-source .venv/bin/activate
-pytest
-```
-
-### Frontend
-
-```bash
+# Frontend
 cd frontend
 npm run test:run    # Single run
 npm test            # Watch mode
@@ -171,11 +191,9 @@ npm test            # Watch mode
 
 ## Stopping Services
 
-Instead of manually hunting down processes with `lsof`, use:
-
 ```bash
-make stop       # Stops backend, frontend, and database
-make status     # Verify everything is shut down
+make stop       # Stops backend, frontend, and database containers
+make status     # Verify what's still running
 ```
 
 If services are still lingering:
@@ -186,10 +204,19 @@ lsof -ti :8000 | xargs kill -9
 lsof -ti :3001 | xargs kill -9
 
 # Or use the clean target
-make clean      # Stops services and removes containers
+make clean      # Stops services and removes containers/volumes
 ```
 
 ## Troubleshooting
+
+### Upload fails with `relation "activities" does not exist`
+
+Your backend is pointed at the **test database** (or a fresh, unmigrated one). Check:
+
+1. `backend/.env` — `DATABASE_URL` must reference port **5432** and database `strava_trends`
+2. The dev DB is running: `make status` (or `docker ps`)
+3. Migrations applied: `cd backend && alembic upgrade head`
+4. Restart the backend after any `.env` change (uvicorn `--reload` does not reload env vars)
 
 ### Database migration issues
 
@@ -232,7 +259,8 @@ strava-trends/
 │   │   └── utils/        # Shared utilities
 │   ├── package.json
 │   └── vite.config.ts
-├── docker-compose.test.yml   # Test database container
+├── docker-compose.yml        # Dev database container (port 5432)
+├── docker-compose.test.yml   # Test database container (port 5433)
 └── README.md
 ```
 
