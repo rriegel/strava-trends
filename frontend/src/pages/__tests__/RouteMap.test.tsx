@@ -121,6 +121,10 @@ function mockRoutes(routes: Route[]) {
 }
 
 beforeEach(() => {
+  // CI has no .env (gitignored); without a token the map never initializes
+  // and map-state assertions would fail. Stubbed for all runs so behavior
+  // is identical locally and in CI.
+  vi.stubEnv('VITE_MAPBOX_TOKEN', 'test-token')
   mapInstances.length = 0
   vi.clearAllMocks()
 })
