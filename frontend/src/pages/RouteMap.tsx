@@ -30,6 +30,8 @@ export default function RouteMap() {
   const map = useRef<mapboxgl.Map | null>(null)
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null)
   const [hoveredRouteId, setHoveredRouteId] = useState<number | null>(null)
+  // Hover over a ghosted (unselected) route line — brightens it before commit
+  const [hoveredGhostRouteId, setHoveredGhostRouteId] = useState<number | null>(null)
   const [routesTruncated, setRoutesTruncated] = useState(false)
   const [renamingRouteId, setRenamingRouteId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -157,18 +159,57 @@ export default function RouteMap() {
           },
         })
 
+        // Selected-route layer: full-strength line drawn above the base and
+        // dot layers. Kept separate from 'routes-line' so ghosting the base
+        // (gray, dimmed, re-filtered) never touches the selection.
+        map.current.addLayer({
+          id: 'routes-line-selected',
+          type: 'line',
+          source: 'routes',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+          },
+          paint: {
+            'line-color': ['get', 'color'],
+            'line-width': 6,
+            'line-opacity': 0,
+          },
+        })
+
+        // Hover-preview layer for ghosted routes: re-renders one unselected
+        // route in its own color at preview opacity, above the ghosts.
+        map.current.addLayer({
+          id: 'routes-line-hover',
+          type: 'line',
+          source: 'routes',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+          },
+          paint: {
+            'line-color': ['get', 'color'],
+            'line-width': 4,
+            'line-opacity': 0,
+          },
+        })
+
         // Add hover effect
         map.current.on('mouseenter', 'routes-line', (e) => {
           if (!map.current || !e.features || !e.features.length) return
           map.current.getCanvas().style.cursor = 'pointer'
           const feature = e.features[0]
           setHoveredRouteId(feature.properties?.id)
+          // Ghost-preview tracking: the styling effect only acts on this
+          // while a route is selected, so an unselected-map hover is a no-op
+          setHoveredGhostRouteId(feature.properties?.id)
         })
 
         map.current.on('mouseleave', 'routes-line', () => {
           if (!map.current) return
           map.current.getCanvas().style.cursor = ''
           setHoveredRouteId(null)
+          setHoveredGhostRouteId(null)
         })
 
         // Add click handler
@@ -193,6 +234,17 @@ export default function RouteMap() {
             ]
           )
           map.current!.fitBounds(bounds, { padding: 100, maxZoom: 15 })
+        })
+
+        // Clicking empty map clears the selection — the other escape hatch
+        // (besides Esc and the popup ×). A click that hits any route line
+        // (ghost or selected) skips the clear, so ghost-click switching
+        // and this don't fight.
+        map.current.on('click', (e) => {
+          const hit = map.current!.queryRenderedFeatures(e.point, {
+            layers: ['routes-line', 'routes-line-selected'],
+          })
+          if (!hit.length) setSelectedRouteId(null)
         })
       }
 
@@ -275,20 +327,88 @@ export default function RouteMap() {
   // movement, and re-apply whenever the routes layer (re)loads — the
   // layer is recreated by the routes effect, so a style-only effect that
   // runs once would silently no-op on the brand-new layer.
+  //
+  // Ghosting model (Flyby-style): the selected route renders fully; all
+  // other routes drop to faint gray "context" lines (hover brightens one
+  // for preview), and their start dots are hidden so overlapping routes
+  // don't pile colored dots around the selection. Clicking a ghost line
+  // switches selection; Esc or clicking empty map clears it.
+  //
+  // Because setFilter/setPaintProperty are absolute overwrites of what the
+  // layer definitions built, this effect owns ALL state-dependent styling —
+  // the zoom-aware opacity ramp for the unselected baseline lives here too,
+  // reapplied on every routes (re)load and selection change.
   useEffect(() => {
     const mbMap = map.current
     if (!mbMap || !mbMap.isStyleLoaded()) return
 
+    const zoomOpacityRamp = [
+      'interpolate', ['linear'], ['zoom'],
+      8, 0.35,
+      12, 0.8,
+    ] as any
+
     if (selectedRouteId) {
-      mbMap.setFilter('routes-line', ['==', ['get', 'id'], selectedRouteId])
-      mbMap.setPaintProperty('routes-line', 'line-width', 6)
-      mbMap.setPaintProperty('routes-line', 'line-opacity', 1)
+      // Selected: unfiltered full-strength line on its own layer
+      mbMap.setFilter('routes-line-selected', ['==', ['get', 'id'], selectedRouteId])
+      mbMap.setPaintProperty('routes-line-selected', 'line-width', 6)
+      mbMap.setPaintProperty('routes-line-selected', 'line-opacity', 1)
+
+      // Ghost the base line layer: everyone else, faint neutral gray.
+      // Faded color was tried mentally and rejected — with many overlapping
+      // routes the ghosts turn to rainbow mud; gray reads as context.
+      mbMap.setFilter(
+        'routes-line',
+        hoveredGhostRouteId != null
+          ? [
+              'all',
+              ['!=', ['get', 'id'], selectedRouteId],
+              ['!=', ['get', 'id'], hoveredGhostRouteId],
+            ]
+          : ['!=', ['get', 'id'], selectedRouteId]
+      )
+      mbMap.setPaintProperty('routes-line', 'line-color', '#9ca3af')
+      mbMap.setPaintProperty('routes-line', 'line-width', 3)
+      mbMap.setPaintProperty('routes-line', 'line-opacity', 0.12)
+
+      // Hovered ghost pops back out at preview strength (own layer so it
+      // can keep its route color)
+      if (hoveredGhostRouteId != null) {
+        mbMap.setFilter('routes-line-hover', ['==', ['get', 'id'], hoveredGhostRouteId])
+        mbMap.setPaintProperty('routes-line-hover', 'line-opacity', 0.6)
+      } else {
+        mbMap.setFilter('routes-line-hover', ['literal', false])
+      }
+
+      // Other routes' start dots disappear while one route is selected
+      // (the ghost lines carry the spatial context; dots are a zoomed-out
+      // locatability aid that only adds clutter here)
+      mbMap.setFilter('routes-start-dots', ['==', ['get', 'id'], selectedRouteId])
     } else {
+      // No selection: base layer shows all routes with zoom-aware opacity
       mbMap.setFilter('routes-line', null)
+      mbMap.setPaintProperty('routes-line', 'line-color', ['get', 'color'])
       mbMap.setPaintProperty('routes-line', 'line-width', 4)
-      mbMap.setPaintProperty('routes-line', 'line-opacity', 0.8)
+      mbMap.setPaintProperty('routes-line', 'line-opacity', zoomOpacityRamp)
+      mbMap.setFilter('routes-line-selected', ['literal', false])
+      mbMap.setFilter('routes-line-hover', ['literal', false])
+      mbMap.setFilter('routes-start-dots', null)
     }
-  }, [selectedRouteId])
+  }, [selectedRouteId, hoveredGhostRouteId, routes])
+
+  // Esc clears the map selection — but not while an inline rename is open:
+  // its Escape means "cancel editing". The guard is checked live via the
+  // renamingRouteId dependency, so the listener never acts on a stale
+  // closure value (e.g. Esc pressed mid-rename right after selecting).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && renamingRouteId === null) {
+        setSelectedRouteId(null)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [renamingRouteId])
 
   const formatDistance = (meters: number) => {
     if (meters >= 1000) {
