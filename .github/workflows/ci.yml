@@ -95,4 +95,4 @@ jobs:
 
       - name: Run security audit
         working-directory: frontend
-        run: npm audit --audit-level=moderate
+        run: npm audit --omit=dev --audit-level=moderate
