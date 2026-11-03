@@ -30,7 +30,7 @@ Fitness analytics platform that surfaces trends across activities over time. Str
 
 ## The Two Databases
 
-There are **two separate PostgreSQL databases**, and mixing them up is the #1 setup mistake:
+There are **two separate PostgreSQL databases**:
 
 | | Dev database | Test database |
 |---|---|---|
@@ -40,7 +40,7 @@ There are **two separate PostgreSQL databases**, and mixing them up is the #1 se
 | Compose file | `docker-compose.yml` | `docker-compose.test.yml` |
 | Used by | The running app (`make dev` / `make backend`) | `make test` / pytest **only** |
 
-**The rule:** `backend/.env` always points at the **dev database (5432)**. Never at the test database. The test database is fully self-managed — `make test` starts it, pytest resets its schema on every run, and pytest ignores `backend/.env` entirely (it uses its own hardcoded test-DB URL). Pointing your dev backend at 5433 will get you a database with no tables.
+**The rule:** `backend/.env` always points at the **dev database (5432)**. The test database is fully self-managed - `make test` starts it, pytest resets its schema on every run, and pytest ignores `backend/.env`
 
 ## Quick Start
 
@@ -67,9 +67,7 @@ Using an existing PostgreSQL server instead? Point `backend/.env` at it:
 DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<dbname>
 ```
 
-> ⚠️ **Do not point `backend/.env` at port 5433** — that's the pytest database (`docker-compose.test.yml`). It exists only for `make test`, gets its tables dropped/recreated on every test run, and is normally empty. A dev backend pointed at it will fail with `relation "activities" does not exist`.
-
-### 2. What `make setup` did
+### 2. What `make setup` does
 
 `make setup` (first run only, safe to re-run — never overwrites an existing `.env`) performs all bootstrap steps. Nothing in the Makefile assumes you've done more than clone the repo.
 
@@ -146,9 +144,9 @@ cd frontend && npm install --legacy-peer-deps
 
 | Source | Status | Notes |
 |--------|--------|-------|
-| File Upload (FIT/GPX/TCX) | ✅ Available | Works for any device |
-| Strava API | ✅ Available | OAuth + webhooks |
-| Garmin Connect | 🔒 Blocked | Developer program paused (March 2026) |
+| File Upload (FIT/GPX/TCX) | Available | Works for any device |
+| Strava API | Available | OAuth + webhooks |
+| Garmin Connect | Blocked | Developer program paused (March 2026) |
 
 Activities are deduplicated across sources by matching start time + distance + duration.
 
