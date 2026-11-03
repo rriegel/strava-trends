@@ -95,10 +95,14 @@ export default function Trends() {
   const setDateRange = (startDate: string, endDate: string) =>
     setFilters({ start: startDate, end: endDate })
 
-  // Keep the URL in sync on first mount if params are missing entirely,
-  // so a bare /trends link immediately becomes shareable
+  // Make a bare /trends link immediately shareable by writing the default
+  // metrics param. Only fires when the URL has NO params at all — any
+  // existing param set (including a lone route_id from the Routes page's
+  // "View activity trends") already round-trips correctly and must be
+  // preserved. This used to check for specific whitelisted keys and do a
+  // full-replace write, which silently dropped route_id on arrival.
   useEffect(() => {
-    if (![...searchParams.keys()].some((k) => ['metrics', 'type', 'bucket', 'aggregation', 'start', 'end'].includes(k))) {
+    if ([...searchParams.keys()].length === 0) {
       setSearchParams(new URLSearchParams({ metrics: selectedMetrics.join(',') }), { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
