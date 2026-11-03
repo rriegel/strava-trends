@@ -1,11 +1,13 @@
-.PHONY: dev stop backend frontend db db-test test clean help
+.PHONY: dev setup stop backend frontend db db-test test status clean help backfill-routes
 
 # Default target
 help:
 	@echo "Strava Trends Development Commands"
 	@echo ""
+	@echo "  make setup      - First-time setup: venv, deps, .env files, npm ci"
 	@echo "  make dev        - Start all services (dev DB + backend + frontend)"
 	@echo "  make stop       - Stop all running services"
+	@echo "  make status     - Check what's running"
 	@echo "  make backend    - Start backend only (port 8000)"
 	@echo "  make frontend   - Start frontend only (port 3001)"
 	@echo "  make db         - Start dev database only (port 5432)"
@@ -13,6 +15,40 @@ help:
 	@echo "  make test       - Run test suite (starts test DB automatically)"
 	@echo "  make clean      - Stop services and remove all containers/volumes"
 	@echo ""
+
+# First-time setup: venv + deps + .env files + npm ci (idempotent)
+setup:
+	@echo "Setting up backend..."
+	@cd backend && \
+		if [ -d .venv ]; then \
+			echo "  .venv already exists"; \
+		elif command -v uv >/dev/null 2>&1; then \
+			echo "  creating venv with uv..."; \
+			uv venv .venv && \
+			uv pip install --python .venv/bin/python -q -r requirements.txt; \
+		else \
+			echo "  creating venv with python3..."; \
+			python3 -m venv .venv && \
+			. .venv/bin/activate && \
+			pip install -q -r requirements.txt; \
+		fi && \
+		if [ -f .env ]; then \
+			echo "  .env already exists (left untouched)"; \
+		else \
+			echo "  copying .env.example -> .env"; \
+			cp .env.example .env; \
+		fi
+	@echo "Setting up frontend..."
+	@cd frontend && \
+		( npm ci || ( echo "npm ci failed — try: npm install --legacy-peer-deps (see README Troubleshooting)" && exit 1 ) ) && \
+		if [ -f .env ]; then \
+			echo "  .env already exists (left untouched)"; \
+		else \
+			echo "  copying .env.example -> .env"; \
+			cp .env.example .env; \
+		fi
+	@echo ""
+	@echo "Setup complete. Next: make dev"
 
 # Start all services
 dev: db backend frontend
@@ -115,6 +151,11 @@ seed-dev:
 		ON CONFLICT (id) DO NOTHING;" && \
 	echo "Dev user seeded (or already exists)"
 
+# Build routes from existing activities' GPS tracks (idempotent)
+backfill-routes:
+	@echo "Backfilling routes from activity GPS tracks..."
+	@cd backend && . .venv/bin/activate && python scripts/backfill_routes.py
+
 # Start backend
 backend: migrate seed-dev
 	@echo "Starting backend..."
@@ -148,10 +189,10 @@ status:
 	@echo "Checking service status..."
 	@echo ""
 	@echo "Dev Database (strava-trends-db):"
-	@docker ps --filter name=strava-trends-db --format "  {{.Status}}" 2>/dev/null || echo "  Not running"
+	@docker ps --filter name=strava-trends-db --format "  {{.Status}}" 2>/dev/null | grep . || echo "  Not running"
 	@echo ""
 	@echo "Test Database (strava-trends-test-db):"
-	@docker ps --filter name=strava-trends-test-db --format "  {{.Status}}" 2>/dev/null || echo "  Not running"
+	@docker ps --filter name=strava-trends-test-db --format "  {{.Status}}" 2>/dev/null | grep . || echo "  Not running"
 	@echo ""
 	@echo "Backend (port 8000):"
 	@ss -tlnp 2>/dev/null | grep ':8000 ' || lsof -i :8000 2>/dev/null | grep LISTEN || echo "  Not running"

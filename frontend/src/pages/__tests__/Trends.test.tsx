@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Trends from '../Trends'
 import { getMultiMetricTrend, getPercentileBands } from '../../api/trends'
@@ -10,6 +10,21 @@ vi.mock('../../api/trends', () => ({
   getMultiMetricTrend: vi.fn(),
   getPercentileBands: vi.fn(),
 }))
+
+// Trends looks up the route name for its filter chip via useRoute (singular).
+// Mocked so tests don't need the API layer; clearAllMocks in beforeEach
+// clears calls but keeps this implementation.
+vi.mock('../../hooks/useRoutes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../hooks/useRoutes')>()
+  return {
+    ...actual,
+    useRoute: vi.fn(() => ({
+      data: { id: 7, name: 'River Loop', distance: 5200, elevation_gain: 40, activity_count: 3, cluster_id: null, start_lat: 42.28, start_lng: -83.74, polyline: '' },
+      isLoading: false,
+      error: null,
+    })),
+  }
+})
 
 const mockGetMultiMetricTrend = vi.mocked(getMultiMetricTrend)
 const mockGetPercentileBands = vi.mocked(getPercentileBands)
@@ -45,6 +60,74 @@ describe('Trends page — quick date presets', () => {
 
   afterEach(() => {
     cleanup()
+  })
+
+  describe('route filter', () => {
+    // MemoryRouter doesn't write the real address bar, so URL state is read
+    // from the router itself via a probe child on the same route.
+    function RouteProbe() {
+      const [params] = useSearchParams()
+      return <div data-testid="route-probe">{params.toString()}</div>
+    }
+
+    function renderTrendsWithProbe(initialEntry: string) {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      })
+      return render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[initialEntry]}>
+            <Trends />
+            <RouteProbe />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    }
+
+    it('preserves route_id in the URL when arriving from the Routes page', async () => {
+      // Regression: the mount-sync effect used to fire whenever none of its
+      // six whitelisted keys were present, full-replacing the query string
+      // with metrics=average_speed and silently dropping route_id — so
+      // "View activity trends" landed on an unfiltered Trends page.
+      renderTrendsWithProbe('/trends?route_id=7')
+
+      // Chip renders with the route name
+      expect(screen.getByText(/Route: River Loop/)).toBeInTheDocument()
+
+      // route_id survived mount (not clobbered by the metrics default write)
+      await vi.waitFor(() => {
+        expect(screen.getByTestId('route-probe').textContent).toBe('route_id=7')
+      })
+    })
+
+    it('sends route_id on trend and percentile API calls', async () => {
+      renderTrendsWithProbe('/trends?route_id=7')
+
+      await vi.waitFor(() => {
+        expect(mockGetMultiMetricTrend).toHaveBeenCalledWith(
+          expect.arrayContaining(['average_speed']),
+          expect.objectContaining({ route_id: 7 })
+        )
+        expect(mockGetPercentileBands).toHaveBeenCalledWith(
+          expect.objectContaining({ route_id: 7 })
+        )
+      })
+    })
+
+    it('writes default metrics param on a bare /trends link, but leaves existing params alone', async () => {
+      // Bare link: mount-sync writes metrics=average_speed (shareability)
+      const { unmount } = renderTrendsWithProbe('/trends')
+      await vi.waitFor(() => {
+        expect(screen.getByTestId('route-probe').textContent).toBe('metrics=average_speed')
+      })
+      unmount()
+
+      // Non-bare link (e.g. ?type=Run): mount-sync must not fire
+      renderTrendsWithProbe('/trends?type=Run')
+      await vi.waitFor(() => {
+        expect(screen.getByTestId('route-probe').textContent).toBe('type=Run')
+      })
+    })
   })
 
   it('populates BOTH start and end date fields when a preset is clicked', async () => {
