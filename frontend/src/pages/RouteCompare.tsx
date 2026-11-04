@@ -7,6 +7,10 @@ import {
 } from 'recharts'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { useRoute, useRouteCompare } from '../hooks/useRoutes'
+import {
+  loadViewport,
+  createViewportSaver,
+} from '../utils/mapViewport'
 import type { CompareActivity } from '../types'
 
 /** Deterministic palette for activity colors — indexed by the activity's
@@ -143,14 +147,22 @@ export default function RouteCompare() {
       setMapError(true)
       return
     }
+    const saved = loadViewport('route-compare')
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/outdoors-v12',
-      center: [-74.5, 40],
-      zoom: 11,
+      // Restore the last camera instantly; first-ever visit defaults near
+      // the app's routes (the data-driven fit below takes over precisely)
+      center: saved ? [saved.lng, saved.lat] : [-83.74, 42.28],
+      zoom: saved ? saved.zoom : 11,
+      bearing: saved?.bearing ?? 0,
+      pitch: saved?.pitch ?? 0,
     })
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
     map.current.on('load', () => setMapLoaded(true))
+    // Persist the camera; data-driven fits mark themselves programmatic so
+    // they don't overwrite the user's own saved camera
+    createViewportSaver('route-compare', map.current)
     return () => {
       map.current?.remove()
       map.current = null
@@ -217,19 +229,25 @@ export default function RouteCompare() {
         })
       }
 
-      // Fit to all drawn geometry
+      // Fit to all drawn geometry — a data-driven reframe on selection
+      // change: instant (no sweep), and marked programmatic so the
+      // user's saved camera isn't overwritten by it
       const allCoords = [
         ...features.flatMap((f) => (f.geometry.coordinates as [number, number][])),
       ]
       if (allCoords.length) {
         const lats = allCoords.map((c) => c[1])
         const lngs = allCoords.map((c) => c[0])
+        const saver = (
+          m as unknown as { _saver?: { markProgrammatic: () => void } }
+        )._saver
+        saver?.markProgrammatic()
         m.fitBounds(
           [
             [Math.min(...lngs), Math.min(...lats)],
             [Math.max(...lngs), Math.max(...lats)],
           ],
-          { padding: 60, maxZoom: 16 }
+          { padding: 60, maxZoom: 16, animate: false }
         )
       }
     }
