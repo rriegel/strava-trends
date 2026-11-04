@@ -123,11 +123,11 @@ describe('RouteCompare', () => {
       </QueryClientProvider>
     )
     await vi.waitFor(() => {
-      expect(mockedCompare).toHaveBeenCalledWith(5, [11, 22])
+      expect(mockedCompare).toHaveBeenCalledWith(5, [11, 22], 1000)
     })
     // Split table shows segments with per-activity times; best segment highlighted
     await vi.waitFor(() => {
-      expect(screen.getByText('Splits (400 m checkpoints)')).toBeInTheDocument()
+      expect(screen.getByText('Splits (1 km)')).toBeInTheDocument()
     })
     expect(screen.getByText('Cumulative time vs distance')).toBeInTheDocument()
     expect(screen.getByText('Summary')).toBeInTheDocument()
@@ -167,7 +167,7 @@ describe('RouteCompare', () => {
     })
     // Hook disabled until 2+ — but once both are in the URL it fires
     await vi.waitFor(() => {
-      expect(mockedCompare).toHaveBeenCalledWith(5, [11, 22])
+      expect(mockedCompare).toHaveBeenCalledWith(5, [11, 22], 1000)
     })
   })
 

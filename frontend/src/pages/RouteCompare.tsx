@@ -72,6 +72,27 @@ export default function RouteCompare() {
   // Route detail supplies the activity picker list (id/name/date per activity)
   const routeActivities = route?.activities ?? []
 
+  // Split interval (meters) — URL-persisted like every other filter here
+  const splitInterval = useMemo(() => {
+    const raw = parseInt(searchParams.get('interval') || '', 10)
+    return [1000, 800, 400].includes(raw) ? raw : 1000
+  }, [searchParams])
+
+  const setSplitInterval = (meters: number) => {
+    setSearchParams(
+      (prev) => {
+        const nextParams = new URLSearchParams(prev)
+        if (meters === 1000) {
+          nextParams.delete('interval') // default: keep URLs clean
+        } else {
+          nextParams.set('interval', String(meters))
+        }
+        return nextParams
+      },
+      { replace: true }
+    )
+  }
+
   // Color lookup by activity id, keyed by position in the route's list
   // (stable across selection changes; see ACTIVITY_COLORS note on why not
   // id-hashing). Falls back to id-hash for activities outside the list.
@@ -84,7 +105,7 @@ export default function RouteCompare() {
     [routeActivities]
   )
 
-  const { data: compare, isLoading, error } = useRouteCompare(routeId, selectedIds)
+  const { data: compare, isLoading, error } = useRouteCompare(routeId, selectedIds, splitInterval)
 
   // Selection <-> URL (one writer, callback form so stacked updates compose)
   const toggleActivity = (activityId: number) => {
@@ -434,6 +455,8 @@ export default function RouteCompare() {
                     tick={{ fill: '#6b7280' }}
                     tickFormatter={(v) => formatDuration(v as number)}
                     width={70}
+                    domain={['dataMin', 'dataMax']}
+                    tickCount={6}
                   />
                   <Tooltip
                     content={({ active, payload, label }: any) => {
@@ -491,8 +514,8 @@ export default function RouteCompare() {
                       dataKey={`${a.id}`}
                       stroke={activityColor(a.id)}
                       strokeWidth={2}
-                      dot={{ fill: activityColor(a.id), r: 3 }}
-                      activeDot={{ r: 5 }}
+                      dot={{ fill: activityColor(a.id), r: 2 }}
+                      activeDot={{ r: 4 }}
                       connectNulls={false}
                       isAnimationActive={false}
                     />
@@ -505,9 +528,27 @@ export default function RouteCompare() {
           {/* Split table */}
           {plottable.length >= 1 && splitRows.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Splits (400 m checkpoints)
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Splits ({splitInterval >= 1000 ? `${splitInterval / 1000} km` : `${splitInterval} m`})
+                </h3>
+                <div className="flex items-center gap-1" role="group" aria-label="Split length">
+                  {[1000, 800, 400].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setSplitInterval(m)}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors ${
+                        splitInterval === m
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {m >= 1000 ? `${m / 1000} km` : `${m} m`}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead>
@@ -531,16 +572,22 @@ export default function RouteCompare() {
                       <tr key={i}>
                         <td className="px-4 py-2 text-sm text-gray-700">{row.segment}</td>
                         {row.cells.map((cell) => (
-                          <td
-                            key={cell.activityId}
-                            className={`px-4 py-2 text-sm text-right ${
-                              cell.isBest ? 'font-semibold text-green-700' : 'text-gray-600'
-                            }`}
-                          >
-                            {formatDuration(cell.seconds)}
-                            <span className="text-gray-400 text-xs ml-2">
-                              {formatPace(cell.pace)}
-                            </span>
+                          <td key={cell.activityId} className="px-4 py-2 text-sm text-right">
+                            {cell.isBest ? (
+                              <span className="inline-block px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-semibold">
+                                {formatDuration(cell.seconds)}
+                                <span className="text-green-600 text-xs ml-2">
+                                  {formatPace(cell.pace)}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-gray-600">
+                                {formatDuration(cell.seconds)}
+                                <span className="text-gray-400 text-xs ml-2">
+                                  {formatPace(cell.pace)}
+                                </span>
+                              </span>
+                            )}
                           </td>
                         ))}
                       </tr>

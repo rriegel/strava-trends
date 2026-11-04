@@ -101,11 +101,47 @@ class TestCompareEndpoint:
         assert first["race_plot"]["distances"] == [i * 500.0 for i in range(11)]
         assert first["race_plot"]["elapsed_seconds"] == [i * 150 for i in range(11)]
 
-        # Splits at 400m checkpoints: interpolated, ~120s each (150s/500m)
+        # Splits at the default 1000 m checkpoints: 5 segments at 5:00/km
         assert first["splits"] is not None
-        assert len(first["splits"]) >= 12
-        for s in first["splits"][: -1]:
+        assert len(first["splits"]) == 5
+        for s in first["splits"]:
             assert s["pace_s_per_km"] == pytest.approx(300, rel=0.05)
+
+    def test_custom_checkpoint_interval(
+        self, client, db_session, sample_user, sample_route
+    ):
+        a1 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=1)
+        a2 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=2)
+
+        response = client.get(
+            f"/routes/{sample_route.id}/compare?activity_ids={a1.id},{a2.id}&checkpoint_interval_m=400",
+            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+        )
+        assert response.status_code == 200
+        first = response.json()["activities"][0]
+        # 5000m at 400m checkpoints => 12 full + partial final = 13
+        assert len(first["splits"]) == 13
+        assert first["splits"][0]["end_m"] == 400.0
+        for s in first["splits"][:-1]:
+            assert s["pace_s_per_km"] == pytest.approx(300, rel=0.05)
+
+    def test_checkpoint_interval_validation(
+        self, client, db_session, sample_user, sample_route
+    ):
+        a1 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=1)
+        a2 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=2)
+        base = f"/routes/{sample_route.id}/compare?activity_ids={a1.id},{a2.id}"
+
+        response = client.get(
+            f"{base}&checkpoint_interval_m=0",
+            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+        )
+        assert response.status_code == 422
+        response = client.get(
+            f"{base}&checkpoint_interval_m=6000",
+            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+        )
+        assert response.status_code == 422
 
     def test_activity_without_time_streams_still_gets_track_and_summary(
         self, client, db_session, sample_user, sample_route

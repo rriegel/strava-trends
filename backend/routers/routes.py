@@ -108,13 +108,12 @@ async def get_route(route_id: int, db: Session = Depends(get_db)):
         }
     }
 
-CHECKPOINT_INTERVAL_M = 400.0
 MIN_COMPARE_TRACKS = 2
 MAX_COMPARE_TRACKS = 5
 
 
 def _activity_compare_payload(
-    activity: Activity, streams: dict, route: Route
+    activity: Activity, streams: dict, route: Route, checkpoint_interval_m: float
 ) -> dict:
     """Build one activity's compare payload from its (time, distance) streams."""
     time_stream = streams.get("time")
@@ -159,7 +158,7 @@ def _activity_compare_payload(
     if curve:
         payload["race_plot"] = {"distances": curve[0], "elapsed_seconds": curve[1]}
         payload["splits"] = compute_splits(
-            distance_stream, time_stream, CHECKPOINT_INTERVAL_M
+            distance_stream, time_stream, checkpoint_interval_m
         )
     return payload
 
@@ -168,6 +167,12 @@ def _activity_compare_payload(
 async def compare_route_activities(
     route_id: int,
     activity_ids: str = Query(..., description="Comma-separated activity IDs (2-5)"),
+    checkpoint_interval_m: float = Query(
+        1000.0,
+        gt=0.0,
+        le=5000.0,
+        description="Split segment length in meters (1000 = 1 km, 800, 400, ...)",
+    ),
     db: Session = Depends(get_db),
 ):
     """Compare 2-5 activities on one route: GPS overlay, race plot, splits.
@@ -229,7 +234,9 @@ async def compare_route_activities(
             "activity_count": route.activity_count,
         },
         "activities": [
-            _activity_compare_payload(a, streams_by_activity.get(a.id, {}), route)
+            _activity_compare_payload(
+                a, streams_by_activity.get(a.id, {}), route, checkpoint_interval_m
+            )
             for a in activities
         ],
     }

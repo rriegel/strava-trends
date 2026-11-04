@@ -37,10 +37,11 @@ export async function renameRoute(id: number, name: string): Promise<Route> {
 
 export async function compareRouteActivities(
   routeId: number,
-  activityIds: number[]
+  activityIds: number[],
+  checkpointIntervalM: number = 1000
 ): Promise<CompareResponse> {
   const response = await apiClient.get(`/routes/${routeId}/compare`, {
-    params: { activity_ids: activityIds.join(',') },
+    params: { activity_ids: activityIds.join(','), checkpoint_interval_m: checkpointIntervalM },
   })
   return response.data
 }

@@ -27,10 +27,14 @@ export function useRoute(id: number) {
  * Route comparison payload (GPS overlay + race plot + splits). Disabled
  * until 2+ activities are selected — the endpoint 422s below that.
  */
-export function useRouteCompare(routeId: number, activityIds: number[]) {
+export function useRouteCompare(
+  routeId: number,
+  activityIds: number[],
+  checkpointIntervalM: number = 1000
+) {
   return useQuery({
-    queryKey: ['route-compare', routeId, activityIds],
-    queryFn: () => compareRouteActivities(routeId, activityIds),
+    queryKey: ['route-compare', routeId, activityIds, checkpointIntervalM],
+    queryFn: () => compareRouteActivities(routeId, activityIds, checkpointIntervalM),
     enabled: routeId > 0 && activityIds.length >= 2,
   })
 }
