@@ -111,6 +111,28 @@ class FileUploadService:
             
             activity.has_streams = True
             self.db.commit()
+            
+            # Time + distance streams for route comparison (race plot, splits)
+            if activity_data.get('_time_stream') and activity_data.get('_distance_stream'):
+                time_stream = ActivityStream(
+                    user_id=user_id,
+                    activity_id=activity.id,
+                    stream_type='time',
+                    data=activity_data['_time_stream'],
+                    series_type='time',
+                    original_size=len(activity_data['_time_stream'])
+                )
+                distance_stream = ActivityStream(
+                    user_id=user_id,
+                    activity_id=activity.id,
+                    stream_type='distance',
+                    data=activity_data['_distance_stream'],
+                    series_type='time',
+                    original_size=len(activity_data['_distance_stream'])
+                )
+                self.db.add(time_stream)
+                self.db.add(distance_stream)
+                self.db.commit()
         
         # Save HR stream if present
         if activity_data.get('_hr_stream'):
@@ -257,6 +279,17 @@ class FileUploadService:
             
             total_distance = running_distance
             
+            # Time + distance streams for the compare feature (aligned 1:1:
+            # one entry per valid record). Relative seconds from activity
+            # start — small ints, no tz concerns. Race plot + splits consume
+            # these as a (distance, elapsed_time) monotone curve.
+            time_stream = []
+            if timestamps:
+                t0 = timestamps[0]
+                time_stream = [
+                    int(round((t - t0).total_seconds())) for t in timestamps
+                ]
+            
             # Calculate moving time using common utility
             moving_time = calculate_moving_time(timestamps, cumulative_distances) if len(timestamps) >= 2 else 0
             
@@ -355,6 +388,8 @@ class FileUploadService:
                 "_hr_stream": hr_stream if hr_stream else None,
                 "_latlng_stream": latlng_stream if latlng_stream else None,
                 "_altitude_stream": altitude_stream if altitude_stream else None,
+                "_time_stream": time_stream if time_stream else None,
+                "_distance_stream": [round(d, 1) for d in cumulative_distances] if cumulative_distances else None,
             }
             
             # Debug: uncomment to inspect extracted data
@@ -399,6 +434,11 @@ class FileUploadService:
         hr_stream = []
         timestamps = []
         cumulative_distances = []
+        # Aligned (time, cumulative_distance) pairs — only points with BOTH
+        # a timestamp and a GPS position, so the compare feature's race
+        # plot/splits get a strictly aligned curve (GPX allows time-less or
+        # GPS-less points, which would desync the flat arrays)
+        time_distance_pairs = []
         
         for segment in track.segments:
             for i, point in enumerate(segment.points):
@@ -409,6 +449,26 @@ class FileUploadService:
                 # Collect latlng for route map
                 if point.latitude is not None and point.longitude is not None:
                     latlng_stream.append([point.latitude, point.longitude])
+                    
+                    # Compare-stream pairing: only GPS-bearing points WITH a
+                    # timestamp enter the (time, distance) curve — distance
+                    # accumulates from the last paired point, so time-less
+                    # points are skipped rather than desyncing the arrays
+                    if point.time is not None:
+                        if time_distance_pairs:
+                            _, prev_dist, prev_lat_gpx, prev_lng_gpx = time_distance_pairs[-1]
+                            from math import radians, sin, cos, sqrt, atan2
+                            R = 6371000
+                            lat1_rad = radians(prev_lat_gpx)
+                            lat2_rad = radians(point.latitude)
+                            delta_lat = radians(point.latitude - prev_lat_gpx)
+                            delta_lon = radians(point.longitude - prev_lng_gpx)
+                            a = sin(delta_lat / 2)**2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lon / 2)**2
+                            c = 2 * atan2(sqrt(a), sqrt(1 - a))
+                            cum_dist = prev_dist + R * c
+                        else:
+                            cum_dist = 0.0
+                        time_distance_pairs.append((point.time, cum_dist, point.latitude, point.longitude))
                 
                 # Collect elevation data for smoothing
                 if point.elevation is not None:
@@ -441,6 +501,15 @@ class FileUploadService:
         if len(latlng_stream) >= 2:
             from utils.activity_calculations import calculate_distance_from_latlng
             total_distance = calculate_distance_from_latlng([tuple(p) for p in latlng_stream])
+        
+        # Compare streams: aligned (time, cumulative_distance) from the pairs
+        # collected above — relative seconds from activity start
+        time_stream = []
+        distance_stream = []
+        if time_distance_pairs:
+            t0 = time_distance_pairs[0][0]
+            time_stream = [int(round((t - t0).total_seconds())) for (t, _, _, _) in time_distance_pairs]
+            distance_stream = [round(d, 1) for (_, d, _, _) in time_distance_pairs]
         
         # Calculate moving time using common utility
         moving_time = calculate_moving_time(timestamps, cumulative_distances) if len(timestamps) >= 2 else 0
@@ -483,6 +552,8 @@ class FileUploadService:
             "_latlng_stream": latlng_stream if latlng_stream else None,
             "_altitude_stream": altitude_stream if altitude_stream else None,
             "_hr_stream": hr_stream if hr_stream else None,
+            "_time_stream": time_stream if time_stream else None,
+            "_distance_stream": distance_stream if distance_stream else None,
             "name": track.name or "GPX Activity",
             "type": "Run",  # GPX doesn't always specify sport; default to Run
             "sport_type": None,

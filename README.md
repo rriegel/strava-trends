@@ -103,6 +103,16 @@ npm run test:run    # Single run
 npm test            # Watch mode
 ```
 
+## Re-uploading After Parser Changes
+
+Parser improvements only apply to *new* uploads — existing activities keep whatever streams the old parser persisted. To rebuild everything with current parser logic:
+
+```bash
+make reset-activities    # wipes ALL activities/streams/routes (keeps users); asks for confirmation
+```
+
+Then re-upload your activity files. Routes, streams, and derived metrics are all rebuilt on upload.
+
 ## Stopping Services
 
 ```bash
