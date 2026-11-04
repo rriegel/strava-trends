@@ -50,6 +50,7 @@ export default function RouteCompare() {
   const map = useRef<mapboxgl.Map | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const [mapError, setMapError] = useState(false)
+  const [mapLoaded, setMapLoaded] = useState(false)
 
   // Selected activity ids from the URL (?activities=1,5,9) — shareable
   const selectedIds = useMemo(
@@ -105,13 +106,16 @@ export default function RouteCompare() {
       zoom: 11,
     })
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
+    map.current.on('load', () => setMapLoaded(true))
     return () => {
       map.current?.remove()
       map.current = null
     }
   }, [])
 
-  // Draw the route's canonical line + each selected activity's own track
+  // Draw the route's canonical line + each selected activity's own track.
+  // Keyed on mapLoaded so drawing waits for the map's real load event —
+  // isStyleLoaded() can report false forever if polled at the wrong moment.
   useEffect(() => {
     const mbMap = map.current
     if (!mbMap || !compare) return
@@ -186,9 +190,9 @@ export default function RouteCompare() {
       }
     }
 
-    if (mbMap.isStyleLoaded()) draw()
+    if (mapLoaded && mbMap.isStyleLoaded()) draw()
     else mbMap.once('load', draw)
-  }, [compare, route?.polyline])
+  }, [compare, route?.polyline, mapLoaded])
 
   const compareActivities = compare?.activities ?? []
   const plottable = compareActivities.filter(
@@ -309,33 +313,47 @@ export default function RouteCompare() {
         </div>
       )}
 
-      {compare && (
-        <>
-          {/* Map overlay */}
-          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-            {mapError ? (
-              <div className="h-96 flex items-center justify-center text-gray-500 bg-gray-50">
-                Mapbox token not configured — GPS overlay unavailable
-              </div>
-            ) : (
+      {/* Map card: always mounted so the map initializes on page load
+          (initializing after compare data arrives was too late — the init
+          effect ran once on mount, found no container, and never retried,
+          leaving a blank card). Overlays convey state until data lands. */}
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+        <div className="relative h-96 w-full">
+          {mapError ? (
+            <div className="h-96 flex items-center justify-center text-gray-500 bg-gray-50">
+              Mapbox token not configured — GPS overlay unavailable
+            </div>
+          ) : (
+            <>
               <div ref={mapContainer} className="h-96 w-full" />
-            )}
-            <div className="p-3 flex flex-wrap gap-4 border-t">
-              {compareActivities.map((a) => (
-                <div key={a.id} className="flex items-center gap-1.5 text-sm">
-                  <span
-                    className="w-3 h-3 rounded-full inline-block"
-                    style={{ backgroundColor: activityColor(a.id) }}
-                  />
-                  <span className="text-gray-700">
-                    {new Date(a.summary.start_date).toLocaleDateString()}
+              {!compare && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-gray-500">
+                  Select 2–{MAX_SELECTABLE} activities below to overlay their GPS tracks
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {compare && (
+          <div className="p-3 flex flex-wrap gap-4 border-t">
+            {compareActivities.map((a) => (
+              <div key={a.id} className="flex items-center gap-1.5 text-sm">
+                <span
+                  className="w-3 h-3 rounded-full inline-block"
+                  style={{ backgroundColor: activityColor(a.id) }}
+                />
+                <span className="text-gray-700">
+                  {new Date(a.summary.start_date).toLocaleDateString()}
                     {a.direction_reversed && ' (ran reverse — no time compare)'}
                   </span>
                 </div>
               ))}
             </div>
-          </div>
+        )}
+      </div>
 
+        {compare && (
+          <>
           {/* Race plot */}
           {plottable.length >= 1 && raceData.length > 1 && (
             <div className="bg-white rounded-lg shadow-sm border p-6">
@@ -491,8 +509,8 @@ export default function RouteCompare() {
               </table>
             </div>
           </div>
-        </>
-      )}
+          </>
+        )}
     </div>
   )
 }
