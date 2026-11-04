@@ -191,6 +191,27 @@ describe('RouteCompare', () => {
     })
   })
 
+  it('assigns distinct colors to distinct activities (no id-hash collisions)', async () => {
+    // Regression: colors used to hash by activity id (id % 5), so ids
+    // differing by a multiple of 5 collided. Colors must come from the
+    // activity's position in the route's activity list instead.
+    renderCompare('/routes/5/compare?activities=11,22')
+
+    await vi.waitFor(() => {
+      expect(screen.getByText('Cumulative time vs distance')).toBeInTheDocument()
+    })
+    // Collect the two legend swatch colors (map legend under the map card)
+    const legend = screen
+      .getAllByText(/2026/)
+      .map((el) => el.closest('div')?.querySelector('span[style]'))
+      .filter((el): el is HTMLElement => el !== null)
+      .map((el) => el.style.backgroundColor)
+    const unique = new Set(legend)
+    // Both activities present in legend with distinct colors
+    expect(legend.length).toBeGreaterThanOrEqual(2)
+    expect(unique.size).toBe(legend.length)
+  })
+
   it('shows an error state when the compare call fails', async () => {
     mockedCompare.mockRejectedValue(new Error('boom'))
     renderCompare('/routes/5/compare?activities=11,22')

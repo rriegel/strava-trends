@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import mapboxgl from 'mapbox-gl'
 import polyline from '@mapbox/polyline'
@@ -9,17 +9,23 @@ import 'mapbox-gl/dist/mapbox-gl.css'
 import { useRoute, useRouteCompare } from '../hooks/useRoutes'
 import type { CompareActivity } from '../types'
 
-/** Deterministic color per activity id — same palette family as RouteMap. */
-function activityColor(activityId: number): string {
-  const COLORS = [
-    '#ff6b35', // Strava orange
-    '#3b82f6', // blue
-    '#10b981', // green
-    '#8b5cf6', // purple
-    '#f59e0b', // amber
-  ]
-  return COLORS[activityId % COLORS.length]
-}
+/** Deterministic palette for activity colors — indexed by the activity's
+ * position in the route's activity list, NOT by id (id-hashing collides:
+ * ids 15 and 20 both hit slot 5%5). With selection capped at 5 and a
+ * 10-color palette, two *selected* activities can only collide on a
+ * route with 10+ activities — outside current scope. */
+const ACTIVITY_COLORS = [
+  '#ff6b35', // Strava orange
+  '#3b82f6', // blue
+  '#10b981', // green
+  '#8b5cf6', // purple
+  '#f59e0b', // amber
+  '#ef4444', // red
+  '#06b6d4', // cyan
+  '#ec4899', // pink
+  '#84cc16', // lime
+  '#6366f1', // indigo
+]
 
 const MAX_SELECTABLE = 5
 
@@ -65,6 +71,18 @@ export default function RouteCompare() {
   const { data: route } = useRoute(routeId)
   // Route detail supplies the activity picker list (id/name/date per activity)
   const routeActivities = route?.activities ?? []
+
+  // Color lookup by activity id, keyed by position in the route's list
+  // (stable across selection changes; see ACTIVITY_COLORS note on why not
+  // id-hashing). Falls back to id-hash for activities outside the list.
+  const activityColor = useCallback(
+    (activityId: number): string => {
+      const idx = routeActivities.findIndex((ra) => ra.id === activityId)
+      if (idx >= 0) return ACTIVITY_COLORS[idx % ACTIVITY_COLORS.length]
+      return ACTIVITY_COLORS[activityId % ACTIVITY_COLORS.length]
+    },
+    [routeActivities]
+  )
 
   const { data: compare, isLoading, error } = useRouteCompare(routeId, selectedIds)
 
