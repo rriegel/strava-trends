@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { uploadApi, type UploadResult, type BatchUploadResponse } from '../api/uploads'
 
 export interface FileUploadState {
@@ -8,6 +9,24 @@ export interface FileUploadState {
   error: string | null
 }
 
+/**
+ * Query families derived from uploaded activities. Uploads create/match
+ * routes and change every aggregate built over activities, so all of
+ * these must be marked stale after a successful upload — otherwise pages
+ * visited recently (within staleTime) keep showing pre-upload data, e.g.
+ * "0 routes discovered" after a wipe + reupload.
+ */
+const UPLOAD_INVALIDATED_KEYS = [
+  'activities',
+  'routes',
+  'route',
+  'route-compare',
+  'calendar',
+  'multi-trend',
+  'percentile-bands',
+  'currentUser',
+] as const
+
 export function useFileUpload() {
   const [state, setState] = useState<FileUploadState>({
     isUploading: false,
@@ -15,6 +34,7 @@ export function useFileUpload() {
     results: [],
     error: null,
   })
+  const queryClient = useQueryClient()
 
   const uploadFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return
@@ -51,6 +71,14 @@ export function useFileUpload() {
         error: null,
       })
 
+      // Mark every activity-derived query stale so pages show fresh data on
+      // next visit. Invalidate (not just stale): mounted queries refetch
+      // immediately, and this also covers the wipe-and-reupload case where
+      // a page's cached copy predates the new data entirely.
+      for (const key of UPLOAD_INVALIDATED_KEYS) {
+        queryClient.invalidateQueries({ queryKey: [key] })
+      }
+
       return response
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Upload failed'
@@ -62,7 +90,7 @@ export function useFileUpload() {
       })
       throw err
     }
-  }, [])
+  }, [queryClient])
 
   const reset = useCallback(() => {
     setState({
