@@ -59,6 +59,54 @@ export interface Route {
   start_lat: number
   start_lng: number
   polyline: string
+  /** Present on GET /routes/{id} detail responses */
+  activities?: RouteActivityDetail[]
+}
+
+/** Per-activity summary inside a route detail response. */
+export interface RouteActivityDetail {
+  id: number
+  start_date: string
+  moving_time: number
+  distance: number | null
+  average_speed: number | null
+  average_heartrate: number | null
+  distance_bucket: string | null
+  effort_zone: string | null
+}
+
+/** One activity's contribution to a route comparison. */
+export interface CompareActivity {
+  id: number
+  summary: {
+    id: number
+    name: string
+    start_date: string
+    moving_time: number
+    elapsed_time: number
+    distance: number | null
+    average_speed: number | null
+    average_heartrate: number | null
+    total_elevation_gain: number | null
+  }
+  /** Decimated latlng pairs for the map overlay (empty when no GPS stream). */
+  track: [number, number][]
+  /** Raw cumulative curve — pauses render as vertical time jumps. */
+  race_plot: { distances: number[]; elapsed_seconds: number[] } | null
+  /** 400m checkpoint splits; pause seconds land in the following segment. */
+  splits: { start_m: number; end_m: number; seconds: number; pace_s_per_km: number | null }[] | null
+  direction_reversed: boolean
+}
+
+export interface CompareResponse {
+  route: {
+    id: number
+    name: string
+    distance: number
+    elevation_gain: number
+    activity_count: number
+  }
+  activities: CompareActivity[]
 }
 
 export interface TrendData {

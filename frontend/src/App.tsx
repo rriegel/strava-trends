@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard'
 import Activities from './pages/Activities'
 import Trends from './pages/Trends'
 import RouteMap from './pages/RouteMap'
+import RouteCompare from './pages/RouteCompare'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
 import Layout from './components/Layout'
@@ -24,6 +25,7 @@ function App() {
         <Route path="/activities" element={<Activities />} />
         <Route path="/trends" element={<Trends />} />
         <Route path="/routes" element={<RouteMap />} />
+        <Route path="/routes/:id/compare" element={<RouteCompare />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>

@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { Route, Pagination } from '../types'
+import type { Route, Pagination, CompareResponse } from '../types'
 
 export interface RoutesResponse {
   routes: Route[]
@@ -32,5 +32,15 @@ export async function getRouteClusters(): Promise<any[]> {
 
 export async function renameRoute(id: number, name: string): Promise<Route> {
   const response = await apiClient.patch(`/routes/${id}`, { name })
+  return response.data
+}
+
+export async function compareRouteActivities(
+  routeId: number,
+  activityIds: number[]
+): Promise<CompareResponse> {
+  const response = await apiClient.get(`/routes/${routeId}/compare`, {
+    params: { activity_ids: activityIds.join(',') },
+  })
   return response.data
 }

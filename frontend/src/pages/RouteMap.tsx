@@ -627,6 +627,15 @@ export default function RouteMap() {
                 View activity trends
               </button>
             </div>
+            {selectedRoute.activity_count >= 2 && (
+              <button
+                type="button"
+                onClick={() => navigate(`/routes/${selectedRoute.id}/compare`)}
+                className="w-full px-3 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-600 rounded-lg hover:bg-blue-50"
+              >
+                Compare activities
+              </button>
+            )}
           </div>
         )}
       </div>

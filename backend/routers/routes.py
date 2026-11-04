@@ -94,6 +94,7 @@ async def get_route(route_id: int, db: Session = Depends(get_db)):
                 "id": a.id,
                 "start_date": a.start_date.isoformat(),
                 "moving_time": a.moving_time,
+                "distance": float(a.distance) if a.distance is not None else None,
                 "average_speed": a.average_speed,
                 "average_heartrate": a.average_heartrate,
                 "distance_bucket": a.distance_bucket,
