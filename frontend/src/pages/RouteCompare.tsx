@@ -305,8 +305,17 @@ export default function RouteCompare() {
         }))
       if (cells.length < 1) continue
       const best = Math.min(...cells.map((c) => c.seconds))
+      // Segment label comes from an activity that HAS this split — counts
+      // differ between activities (slightly different GPS distances), and
+      // indexing plottable[0].splits[i] crashes when activity 0 is the
+      // shorter one. All same-index splits cover ~the same segment anyway
+      // (same checkpoints from a shared start); prefer the longest
+      // activity's value so labels stay stable across renders.
+      const labelSource =
+        plottable.find((a) => a.splits && a.splits[i] && a.splits.length === maxLen) ??
+        plottable.find((a) => a.splits && a.splits[i])
       rows.push({
-        segment: `${(plottable[0].splits![i].start_m / 1000).toFixed(1)}–${(plottable[0].splits![i].end_m / 1000).toFixed(1)} km`,
+        segment: `${(labelSource!.splits![i].start_m / 1000).toFixed(1)}–${(labelSource!.splits![i].end_m / 1000).toFixed(1)} km`,
         cells: cells.map((c) => ({ ...c, isBest: c.seconds === best })),
       })
     }

@@ -212,6 +212,40 @@ describe('RouteCompare', () => {
     expect(unique.size).toBe(legend.length)
   })
 
+  it('renders the split table when activities have different split counts (shorter first)', async () => {
+    // Regression: the segment label was read from plottable[0].splits[i],
+    // crashing when activity 0 has fewer splits than another (activities
+    // on a route record slightly different GPS distances). Here activity
+    // 11 has 2 splits and activity 22 has 4 — and 11 comes first.
+    mockedCompare.mockResolvedValue({
+      ...COMPARE_PAYLOAD,
+      activities: COMPARE_PAYLOAD.activities.map((a, i) =>
+        i === 0
+          ? { ...a, splits: a.splits!.slice(0, 2) }
+          : {
+              ...a,
+              splits: [
+                ...a.splits!,
+                { start_m: 5590, end_m: 8000, seconds: 600, pace_s_per_km: 230 },
+                { start_m: 8000, end_m: 9590, seconds: 500, pace_s_per_km: 312 },
+              ],
+            }
+      ),
+    } as never)
+
+    renderCompare('/routes/5/compare?activities=11,22')
+
+    await vi.waitFor(() => {
+      // Rows for indexes 0-3 must render without throwing, labeled from
+      // the LONGER activity (22): last row is 8.0-9.6 km
+      expect(screen.getByText('8.0–9.6 km')).toBeInTheDocument()
+    })
+    // The shorter activity simply has no cell in the extra rows
+    const row = screen.getByText('8.0–9.6 km').closest('tr')
+    expect(row).not.toBeNull()
+    expect(row!.querySelectorAll('td').length).toBe(2) // label + only activity 22
+  })
+
   it('shows an error state when the compare call fails', async () => {
     mockedCompare.mockRejectedValue(new Error('boom'))
     renderCompare('/routes/5/compare?activities=11,22')
