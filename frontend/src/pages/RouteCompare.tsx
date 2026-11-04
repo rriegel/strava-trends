@@ -217,22 +217,53 @@ export default function RouteCompare() {
     (a) => a.race_plot && !a.direction_reversed
   )
 
-  // Race plot data: merge curves into recharts rows keyed by distance
+  // Race plot data: resample every activity onto a SHARED distance grid.
+  // Joining on exact stream distances doesn't work — each activity's GPS
+  // points land at different distances, so most rows would hold a value
+  // for one activity and null for the rest, rendering as disconnected
+  // tick marks. Linear interpolation onto a common 50 m grid gives every
+  // activity a value at (almost) every x, like a real race plot.
   const raceData = useMemo(() => {
     if (plottable.length < 1) return []
-    const allDists = new Set<number>()
-    plottable.forEach((a) => a.race_plot!.distances.forEach((d) => allDists.add(Math.round(d))))
-    const dists = [...allDists].sort((x, y) => x - y)
-    return dists.map((d) => {
-      const row: Record<string, number | null> = { dist: d }
-      plottable.forEach((a) => {
-        // Find elapsed at this distance (points are exact multiples of the
-        // stream sampling; nearest-point lookup is fine at this density)
-        const idx = a.race_plot!.distances.findIndex((dd) => Math.round(dd) === d)
-        row[`${a.id}`] = idx >= 0 ? a.race_plot!.elapsed_seconds[idx] : null
+
+    // Collapse standing points (keep first arrival) per activity so the
+    // distance axis is strictly increasing and interpolation is total
+    const curves = plottable.map((a) => {
+      const d: number[] = []
+      const t: number[] = []
+      a.race_plot!.distances.forEach((dist, i) => {
+        if (d.length === 0 || dist > d[d.length - 1]) {
+          d.push(dist)
+          t.push(a.race_plot!.elapsed_seconds[i])
+        }
       })
-      return row
+      return { id: a.id, d, t, final: d[d.length - 1] }
     })
+
+    const interp = (c: (typeof curves)[0], x: number): number | null => {
+      if (x < c.d[0] || x > c.final) return null
+      let lo = 0
+      let hi = c.d.length - 1
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1
+        if (c.d[mid] <= x) lo = mid
+        else hi = mid
+      }
+      if (c.d[hi] === c.d[lo]) return c.t[hi]
+      return c.t[lo] + (c.t[hi] - c.t[lo]) * ((x - c.d[lo]) / (c.d[hi] - c.d[lo]))
+    }
+
+    const maxFinal = Math.max(...curves.map((c) => c.final))
+    const STEP = 50
+    const rows: Record<string, number | null>[] = []
+    for (let x = 0; x <= maxFinal + STEP / 2; x += STEP) {
+      const row: Record<string, number | null> = { dist: x }
+      for (const c of curves) {
+        row[`${c.id}`] = interp(c, x)
+      }
+      rows.push(row)
+    }
+    return rows
   }, [plottable])
 
   // Split table: same checkpoints across activities (400m intervals)
@@ -383,32 +414,75 @@ export default function RouteCompare() {
               </p>
               <ResponsiveContainer width="100%" height={360}>
                 <LineChart data={raceData} margin={{ top: 5, right: 20, bottom: 25, left: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis
                     dataKey="dist"
-                    tickFormatter={(v) => `${(v / 1000).toFixed(1)}`}
-                    label={{ value: 'km', position: 'insideBottom', offset: -15 }}
+                    stroke="#9ca3af"
+                    fontSize={12}
+                    tick={{ fill: '#6b7280' }}
+                    tickFormatter={(v) => `${((v as number) / 1000).toFixed(1)}`}
+                    label={{
+                      value: 'Distance (km)',
+                      position: 'insideBottom',
+                      offset: -15,
+                      style: { fill: '#6b7280', fontSize: 12 },
+                    }}
                   />
                   <YAxis
+                    stroke="#9ca3af"
+                    fontSize={12}
+                    tick={{ fill: '#6b7280' }}
                     tickFormatter={(v) => formatDuration(v as number)}
                     width={70}
                   />
                   <Tooltip
-                    labelFormatter={(v) => `${((v as number) / 1000).toFixed(2)} km`}
-                    formatter={(value, name) => [
-                      formatDuration(value as number),
-                      compareActivities.find((a) => String(a.id) === name)?.summary
-                        ? new Date(
-                            compareActivities.find((a) => String(a.id) === name)!.summary.start_date
-                          ).toLocaleDateString()
-                        : name,
-                    ]}
+                    content={({ active, payload, label }: any) => {
+                      if (!active || !payload || payload.length === 0) return null
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+                          <p className="text-sm font-medium text-gray-900 mb-2">
+                            {((label as number) / 1000).toFixed(2)} km
+                          </p>
+                          {payload.map((entry: any) => {
+                            const act = compareActivities.find((a) => String(a.id) === entry.dataKey)
+                            return (
+                              <div key={entry.dataKey} className="flex items-center gap-2 text-sm">
+                                <div
+                                  className="w-3 h-3 rounded-full"
+                                  style={{ backgroundColor: entry.color ?? entry.stroke }}
+                                />
+                                <span className="text-gray-600">
+                                  {act
+                                    ? new Date(act.summary.start_date).toLocaleDateString()
+                                    : entry.dataKey}
+                                  :
+                                </span>
+                                <span className="font-medium text-gray-900">
+                                  {formatDuration(entry.value as number)}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    }}
                   />
                   <Legend
-                    formatter={(value) => {
-                      const act = compareActivities.find((a) => String(a.id) === value)
-                      return act ? new Date(act.summary.start_date).toLocaleDateString() : value
-                    }}
+                    content={() => (
+                      <div className="flex flex-wrap gap-4 mt-4 justify-center">
+                        {plottable.map((a) => (
+                          <div key={a.id} className="flex items-center gap-2 text-sm">
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: activityColor(a.id) }}
+                            />
+                            <span className="text-gray-600">
+                              {new Date(a.summary.start_date).toLocaleDateString()}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   />
                   {plottable.map((a) => (
                     <Line
@@ -417,7 +491,8 @@ export default function RouteCompare() {
                       dataKey={`${a.id}`}
                       stroke={activityColor(a.id)}
                       strokeWidth={2}
-                      dot={false}
+                      dot={{ fill: activityColor(a.id), r: 3 }}
+                      activeDot={{ r: 5 }}
                       connectNulls={false}
                       isAnimationActive={false}
                     />
