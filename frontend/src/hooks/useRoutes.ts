@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { getRoutes, getRoute, renameRoute, compareRouteActivities, type RoutesResponse } from '../api/routes'
 import type { Route } from '../types'
 
@@ -36,6 +36,11 @@ export function useRouteCompare(
     queryKey: ['route-compare', routeId, activityIds, checkpointIntervalM],
     queryFn: () => compareRouteActivities(routeId, activityIds, checkpointIntervalM),
     enabled: routeId > 0 && activityIds.length >= 2,
+    // Keep the previous interval's payload on screen while a new interval
+    // refetches — changing 1 km -> 400 m should update the split table in
+    // place, not unmount the whole compare view (stale data is shown as
+    // such via isFetching, same pattern as the Trends page).
+    placeholderData: keepPreviousData,
   })
 }
 

@@ -105,7 +105,12 @@ export default function RouteCompare() {
     [routeActivities]
   )
 
-  const { data: compare, isLoading, error } = useRouteCompare(routeId, selectedIds, splitInterval)
+  const {
+    data: compare,
+    isLoading,
+    isFetching,
+    error,
+  } = useRouteCompare(routeId, selectedIds, splitInterval)
 
   // Selection <-> URL (one writer, callback form so stacked updates compose)
   const toggleActivity = (activityId: number) => {
@@ -380,12 +385,9 @@ export default function RouteCompare() {
         )}
       </div>
 
-      {isLoading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-        </div>
-      )}
-
+      {/* Loading/error blocks removed from the document flow — the map
+          card keeps its size and carries status overlays instead, so no
+          layout shift when compare data arrives. */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-800">Failed to load comparison. Try different activities.</p>
@@ -395,7 +397,8 @@ export default function RouteCompare() {
       {/* Map card: always mounted so the map initializes on page load
           (initializing after compare data arrives was too late — the init
           effect ran once on mount, found no container, and never retried,
-          leaving a blank card). Overlays convey state until data lands. */}
+          leaving a blank card). Status overlays (hint / loading / updating)
+          render inside the fixed-size card instead of shifting layout. */}
       <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
         <div className="relative h-96 w-full">
           {mapError ? (
@@ -405,9 +408,22 @@ export default function RouteCompare() {
           ) : (
             <>
               <div ref={mapContainer} className="h-96 w-full" />
-              {!compare && (
+              {!compare && !error && (
                 <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-gray-500">
-                  Select 2–{MAX_SELECTABLE} activities below to overlay their GPS tracks
+                  {isLoading ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+                      <span>Loading comparison…</span>
+                    </div>
+                  ) : (
+                    `Select 2–${MAX_SELECTABLE} activities below to overlay their GPS tracks`
+                  )}
+                </div>
+              )}
+              {compare && isFetching && (
+                <div className="absolute top-3 right-3 bg-white/90 border border-gray-200 rounded-md px-2.5 py-1 text-xs text-gray-500 flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600" />
+                  Updating…
                 </div>
               )}
             </>
