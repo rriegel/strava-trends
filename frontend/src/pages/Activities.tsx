@@ -4,6 +4,7 @@ import FileUpload from '../components/FileUpload'
 import ActivityList from '../components/ActivityList'
 import ActivityFilters from '../components/ActivityFilters'
 import ActivityDetail from '../components/ActivityDetail'
+import GarminSyncCard from '../components/GarminSyncCard'
 import { useActivities } from '../hooks/useActivities'
 import type { ActivitySummary } from '../api/activities'
 
@@ -70,6 +71,8 @@ export default function Activities() {
           <FileUpload onUploadComplete={handleUploadComplete} />
         </div>
       )}
+
+      <GarminSyncCard />
 
       <div className="mb-4">
         {routeFilterActive && (
