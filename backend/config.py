@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     strava_client_id: str = ""
     strava_client_secret: str = ""
     strava_redirect_uri: str = "http://localhost:8000/auth/strava/callback"
+
+    # Garmin Personal API (sync)
+    garmin_api_key: str = ""
+    garmin_api_key_expires_at: str = ""  # ISO date string; empty = unknown expiry
+    garmin_fit_cache_dir: str = ""  # empty = <backend>/data/garmin_fit_cache
     
     # Authentication
     secret_key: str = "change-this-in-production"

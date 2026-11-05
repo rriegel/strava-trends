@@ -26,14 +26,25 @@ class FileUploadService:
     def __init__(self, db: Session):
         self.db = db
     
-    async def process_upload(self, user_id: int, file_content: bytes, filename: str) -> Dict:
+    async def process_upload(
+        self,
+        user_id: int,
+        file_content: bytes,
+        filename: str,
+        source: Optional[str] = None,
+        source_id_override: Optional[str] = None,
+    ) -> Dict:
         """
         Process an uploaded activity file.
-        
+
         Args:
             user_id: User who owns the activity
             file_content: Raw file bytes
             filename: Original filename (used for format detection and source_id)
+            source: Optional source label override (default 'file_upload'); e.g.
+                'garmin' for sync-imported files
+            source_id_override: Optional explicit source_id (default derived
+                '<filename>_<start_ts>'); e.g. the Garmin activity id
         
         Returns:
             Dict with status and activity info
@@ -57,10 +68,11 @@ class FileUploadService:
         start_date_str = activity_data.get('start_date', '')
         if hasattr(start_date_str, 'isoformat'):
             start_date_str = start_date_str.isoformat()
-        source_id = f"{filename}_{start_date_str}"
+        source_id = source_id_override or f"{filename}_{start_date_str}"
+        source_label = source or "file_upload"
         existing = self.db.query(Activity).filter(
             Activity.user_id == user_id,
-            Activity.source == "file_upload",
+            Activity.source == source_label,
             Activity.source_id == source_id
         ).first()
         
@@ -77,7 +89,7 @@ class FileUploadService:
         # Create new activity
         activity = Activity(
             user_id=user_id,
-            source="file_upload",
+            source=source_label,
             source_id=source_id,
             **activity_data_clean
         )
