@@ -153,10 +153,12 @@ class GarminClient:
                 f"Token mint failed ({response.status_code}). Check the API key "
                 "and its expiry."
             )
-        data = response.json()
-        token = data.get("access_token")
+        # The mint endpoint returns the access token itself as text/plain —
+        # a dot-separated JWT (header.payload.signature), NOT JSON. Use the
+        # body verbatim; parsing it would crash (observed 2026-11-05).
+        token = response.text.strip()
         if not token:
-            raise GarminApiError("Token mint response missing access_token")
+            raise GarminApiError("Token mint returned an empty body")
         _token_cache.put(token)
         return token
 

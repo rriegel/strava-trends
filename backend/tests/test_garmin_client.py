@@ -48,7 +48,9 @@ class TestKeyExpiry:
         # US format (Garmin settings UI) + whitespace/quotes tolerance
         assert parse_key_expiry("01/15/2099") == date(2099, 1, 15)
         assert parse_key_expiry(' "01/15/2099" ') == date(2099, 1, 15)
-        assert parse_key_expiry("01/15/2099") != date(2099, 15, 1)  # month/day order fixed
+        # month/day order: 01 must land in the month slot, not the day slot
+        parsed = parse_key_expiry("01/15/2099")
+        assert parsed is not None and parsed.month == 1 and parsed.day == 15
         assert parse_key_expiry("") is None
         assert parse_key_expiry("garbage") is None
 
@@ -81,7 +83,7 @@ class TestTokenLifecycle:
             if request.url.path == gc.TOKEN_MINT_PATH:
                 assert request.headers["Authorization"] == "ApiKey test-api-key"
                 mints.append(1)
-                return httpx.Response(200, json={"access_token": "tok-1", "expires_in": 86400})
+                return httpx.Response(200, text="tok-1", headers={"content-type": "text/plain"})
             assert request.headers["Authorization"] == "Bearer tok-1"
             return httpx.Response(200, json=[])
 
@@ -110,7 +112,7 @@ class TestTokenLifecycle:
             if request.url.path == gc.TOKEN_MINT_PATH:
                 mints.append(1)
                 n = len(mints)
-                return httpx.Response(200, json={"access_token": f"tok-{n}", "expires_in": 86400})
+                return httpx.Response(200, text=f"tok-{n}", headers={"content-type": "text/plain"})
             if request.headers["Authorization"].endswith("tok-1"):
                 return httpx.Response(401)
             return httpx.Response(200, json=[])
@@ -154,7 +156,7 @@ class TestListActivities:
 
         async def handler(request):
             if request.url.path == gc.TOKEN_MINT_PATH:
-                return httpx.Response(200, json={"access_token": "tok-1", "expires_in": 86400})
+                return httpx.Response(200, text="tok-1", headers={"content-type": "text/plain"})
             start = int(request.url.params["start"])
             return httpx.Response(200, json=pages[start])
 
@@ -196,7 +198,7 @@ class TestListActivities:
 
         async def handler(request):
             if request.url.path == gc.TOKEN_MINT_PATH:
-                return httpx.Response(200, json={"access_token": "tok-1", "expires_in": 86400})
+                return httpx.Response(200, text="tok-1", headers={"content-type": "text/plain"})
             return httpx.Response(500)
 
         import httpx as _hx
