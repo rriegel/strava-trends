@@ -156,6 +156,15 @@ backfill-routes:
 	@echo "Backfilling routes from activity GPS tracks..."
 	@cd backend && . .venv/bin/activate && python scripts/backfill_routes.py
 
+# Wipe all activity data (activities, streams, routes, derived tables) but
+# keep users — for clean re-uploads after parser changes. Destructive!
+reset-activities:
+	@echo "Wiping ALL activity data (activities, streams, routes, computed metrics, effort groups). Users are kept."
+	@printf "Type 'wipe' to confirm: "; read confirm; [ "$$confirm" = wipe ] || { echo "Aborted."; exit 1; }
+	@docker exec strava-trends-db psql -U postgres -d strava_trends -c \
+		"TRUNCATE effort_groups, computed_metrics, activity_streams, routes, route_clusters, activities RESTART IDENTITY CASCADE;"
+	@echo "Activity data wiped. Re-upload files to rebuild (routes + streams are derived on upload)."
+
 # Start backend
 backend: migrate seed-dev
 	@echo "Starting backend..."

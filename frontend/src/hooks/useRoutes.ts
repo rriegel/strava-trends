@@ -1,5 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getRoutes, getRoute, renameRoute, type RoutesResponse } from '../api/routes'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { getRoutes, getRoute, renameRoute, compareRouteActivities, type RoutesResponse } from '../api/routes'
 import type { Route } from '../types'
 
 export function useRoutes(params?: {
@@ -20,6 +20,27 @@ export function useRoute(id: number) {
     queryKey: ['route', id],
     queryFn: () => getRoute(id),
     enabled: id > 0,
+  })
+}
+
+/**
+ * Route comparison payload (GPS overlay + race plot + splits). Disabled
+ * until 2+ activities are selected — the endpoint 422s below that.
+ */
+export function useRouteCompare(
+  routeId: number,
+  activityIds: number[],
+  checkpointIntervalM: number = 1000
+) {
+  return useQuery({
+    queryKey: ['route-compare', routeId, activityIds, checkpointIntervalM],
+    queryFn: () => compareRouteActivities(routeId, activityIds, checkpointIntervalM),
+    enabled: routeId > 0 && activityIds.length >= 2,
+    // Keep the previous interval's payload on screen while a new interval
+    // refetches — changing 1 km -> 400 m should update the split table in
+    // place, not unmount the whole compare view (stale data is shown as
+    // such via isFetching, same pattern as the Trends page).
+    placeholderData: keepPreviousData,
   })
 }
 

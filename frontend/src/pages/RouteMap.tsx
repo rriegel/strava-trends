@@ -4,6 +4,11 @@ import mapboxgl from 'mapbox-gl'
 import polyline from '@mapbox/polyline'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { useRoutes, useRenameRoute } from '../hooks/useRoutes'
+import {
+  loadViewport,
+  createViewportSaver,
+  type MapViewport,
+} from '../utils/mapViewport'
 
 /**
  * Deterministic color per route id, so colors don't shuffle when the sort
@@ -56,14 +61,26 @@ export default function RouteMap() {
       return
     }
 
+    const saved: MapViewport | null = loadViewport('routes')
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/outdoors-v12',
-      center: [-74.5, 40], // Default center
-      zoom: 9
+      // Restore the user's last camera instantly (no animation on load);
+      // fall back to the routes' home area only on a first-ever visit.
+      center: saved ? [saved.lng, saved.lat] : [-83.74, 42.28],
+      zoom: saved ? saved.zoom : 10.5,
+      bearing: saved?.bearing ?? 0,
+      pitch: saved?.pitch ?? 0,
     })
 
     map.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
+
+    // Persist the camera across visits. Programmatic moves (data-driven
+    // fits) are marked so they don't overwrite the user's own camera; the
+    // saver skips one moveend per marked programmatic move.
+    const saver = createViewportSaver('routes', map.current)
+    // Exposed for tests / programmatic fits below
+    ;(map.current as unknown as { _saver?: unknown })._saver = saver
 
     return () => {
       if (map.current) {
@@ -248,8 +265,10 @@ export default function RouteMap() {
         })
       }
 
-      // Fit bounds to show all routes
-      if (features.length > 0) {
+      // Fit bounds to show all routes. Data-driven reframe: instant, not
+      // animated — but only when there's no saved viewport (a returning
+      // visitor's camera is restored at init and must not be hijacked).
+      if (features.length > 0 && !loadViewport('routes')) {
         const allCoords = features.flatMap((f) => f.geometry.coordinates)
         const lats = allCoords.map((c) => c[1])
         const lngs = allCoords.map((c) => c[0])
@@ -257,7 +276,9 @@ export default function RouteMap() {
           [Math.min(...lngs), Math.min(...lats)],
           [Math.max(...lngs), Math.max(...lats)],
         ]
-        map.current.fitBounds(bounds, { padding: 50 })
+        const saver = (map.current as unknown as { _saver?: { markProgrammatic: () => void } })._saver
+        saver?.markProgrammatic()
+        map.current.fitBounds(bounds, { padding: 50, animate: false })
       }
     }
 
@@ -288,6 +309,9 @@ export default function RouteMap() {
       [Math.min(...lngs), Math.min(...lats)],
       [Math.max(...lngs), Math.max(...lats)],
     ]
+    // Deliberate user action (button) — animated, and the resulting camera
+    // becomes the user's own saved viewport (intentionally NOT marked
+    // programmatic: the user chose this camera).
     map.current.fitBounds(bounds, { padding: 50 })
   }
 
@@ -313,7 +337,9 @@ export default function RouteMap() {
               [Math.max(...lngs), Math.max(...lats)],
             ]
             // maxZoom keeps short routes from being blown up to
-            // block-level zoom on focus
+            // block-level zoom on focus. Deliberate user action (sidebar
+            // click / map click) — animated, and the camera the user
+            // landed on is saved (not marked programmatic).
             mbMap.fitBounds(bounds, { padding: 100, maxZoom: 16 })
           }
         } catch {
@@ -627,6 +653,15 @@ export default function RouteMap() {
                 View activity trends
               </button>
             </div>
+            {selectedRoute.activity_count >= 2 && (
+              <button
+                type="button"
+                onClick={() => navigate(`/routes/${selectedRoute.id}/compare`)}
+                className="w-full px-3 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-600 rounded-lg hover:bg-blue-50"
+              >
+                Compare activities
+              </button>
+            )}
           </div>
         )}
       </div>
