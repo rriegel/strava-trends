@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useGarminSync, useGarminSyncStatus } from '../hooks/useGarminSync'
 import { activitiesApi } from '../api/activities'
-import type { GarminDuplicateEntry } from '../api/garminSync'
+import { garminSyncApi, type GarminDuplicateEntry } from '../api/garminSync'
 
 /**
  * Garmin sync controls for the Activities page:
@@ -15,15 +16,25 @@ import type { GarminDuplicateEntry } from '../api/garminSync'
 export default function GarminSyncCard() {
   const { data: status } = useGarminSyncStatus()
   const { sync, isSyncing, error, report, clearReport } = useGarminSync()
+  const queryClient = useQueryClient()
   const [showBackfill, setShowBackfill] = useState(false)
   const [backfillLimit, setBackfillLimit] = useState('')
   const [replacingIds, setReplacingIds] = useState<Set<string>>(new Set())
   const [replaceErrors, setReplaceErrors] = useState<Record<string, string>>({})
+  // Duplicate review session: seeded from the first report carrying
+  // duplicates, then PERSISTS across per-row actions (mutation data is
+  // replaced by every sync call, so it can't hold the working list).
+  const [reviewQueue, setReviewQueue] = useState<GarminDuplicateEntry[] | null>(null)
 
   const handleSync = async (backfill: boolean) => {
     const limit = backfill && backfillLimit ? parseInt(backfillLimit, 10) : undefined
     try {
-      await sync(backfill, Number.isNaN(limit ?? NaN) ? undefined : limit)
+      const result = await sync(backfill, Number.isNaN(limit ?? NaN) ? undefined : limit)
+      // Seed the review session only on a fresh duplicates-bearing report —
+      // never clobber an in-progress review with a partial report.
+      if (result.duplicates.length > 0) {
+        setReviewQueue(result.duplicates)
+      }
     } catch {
       // error surfaced via hook state
     }
@@ -37,14 +48,22 @@ export default function GarminSyncCard() {
       return next
     })
     try {
-      // Delete the manual twin via the standard activities API, then re-sync
-      // that garmin id (backfill bounded to 1 — it imports cleanly once the
-      // twin is gone).
+      // 1. Delete the manual twin via the standard activities API.
       await activitiesApi.delete(dup.existing_activity_id)
-      await sync(true, 1)
-      // NOTE: the single-activity re-sync above relies on the sync cursor
-      // ordering; Phase 1 keeps it simple — the backend re-imports on
-      // backfill because the dedupe check no longer hits.
+      // 2. Import exactly that garmin id (single-activity endpoint —
+      //    deliberately skips the cross-source duplicate check).
+      await garminSyncApi.importSingle(dup.garmin_activity_id)
+      // 3. Refresh derived queries (the hook's mutation didn't run, so its
+      //    invalidation didn't either) + the status badge.
+      for (const key of ['activities', 'routes', 'route', 'route-compare', 'calendar', 'multi-trend', 'percentile-bands', 'currentUser']) {
+        queryClient.invalidateQueries({ queryKey: [key] })
+      }
+      queryClient.invalidateQueries({ queryKey: ['garminSyncStatus'] })
+      // 4. Row resolved: remove it from the review queue in place. The rest
+      //    of the queue is untouched — the user keeps working through it.
+      setReviewQueue((prev) =>
+        prev ? prev.filter((d) => d.garmin_activity_id !== dup.garmin_activity_id) : prev
+      )
     } catch (err) {
       setReplaceErrors((prev) => ({
         ...prev,
@@ -60,7 +79,8 @@ export default function GarminSyncCard() {
     }
   }
 
-  const hasDuplicates = !!report && report.duplicates.length > 0
+  const duplicates: GarminDuplicateEntry[] = reviewQueue ?? []
+  const hasDuplicates = duplicates.length > 0
 
   return (
     <div className="bg-white rounded-lg shadow-sm border p-4 mb-6" data-testid="garmin-sync-card">
@@ -177,13 +197,25 @@ export default function GarminSyncCard() {
 
       {hasDuplicates && (
         <div className="mt-3 border-t pt-3" data-testid="garmin-duplicate-review">
-          <h3 className="text-sm font-semibold text-gray-900 mb-2">Duplicate review</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-gray-900">
+              Duplicate review ({duplicates.length} remaining)
+            </h3>
+            <button
+              type="button"
+              onClick={() => setReviewQueue(null)}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              dismiss review
+            </button>
+          </div>
           <p className="text-xs text-gray-500 mb-2">
             These Garmin activities look like ones you already uploaded manually. Keep existing
-            (default) or replace the manual copy with the Garmin original.
+            (default) or replace the manual copy with the Garmin original. Resolving one row
+            keeps the rest of the list intact.
           </p>
           <ul className="space-y-2">
-            {report!.duplicates.map((dup) => (
+            {duplicates.map((dup) => (
               <li
                 key={dup.garmin_activity_id}
                 className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-sm flex-wrap"

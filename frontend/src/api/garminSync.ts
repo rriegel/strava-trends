@@ -40,6 +40,13 @@ export const garminSyncApi = {
     return response.data
   },
 
+  async importSingle(garminActivityId: string): Promise<GarminSyncReport> {
+    const response = await apiClient.post<GarminSyncReport>(
+      `/sync/garmin/${garminActivityId}`
+    )
+    return response.data
+  },
+
   async status(): Promise<GarminSyncStatus> {
     const response = await apiClient.get<GarminSyncStatus>('/sync/garmin/status')
     return response.data

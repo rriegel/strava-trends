@@ -183,6 +183,75 @@ class GarminSyncService:
         )
         return report
 
+    async def import_single(self, user_id: int, garmin_id: str) -> Dict[str, Any]:
+        """
+        Import ONE specific Garmin activity by id — used by the duplicate
+        reconciliation flow ("replace with Garmin copy"): the caller deletes
+        the manual twin first, then calls this. The in-source dedupe is
+        bypassed only if the id is genuinely absent (it must be, post-delete);
+        the cross-source duplicate check is SKIPPED deliberately — the whole
+        point is to import something that looks like an existing activity.
+
+        Returns a single-entry report shaped like sync()'s.
+        """
+        state = SyncState.for_user(self.db, user_id)
+        report: Dict[str, Any] = {
+            "status": "success",
+            "synced": 0,
+            "skipped": 0,
+            "failed": 0,
+            "duplicates": [],
+            "failures": [],
+        }
+
+        detail = await self.client.get_activity_detail(garmin_id)
+        start_utc = self._activity_start_utc(detail)
+
+        # Must not already exist as a garmin import (unique constraint would
+        # reject it anyway, but a clean report beats a 500).
+        if self._already_imported(user_id, garmin_id):
+            report["skipped"] = 1
+            return report
+
+        cache_dir = self._fit_cache_dir()
+        try:
+            fit_bytes = await self.client.download_original_fit(
+                garmin_id, cache_dir=cache_dir
+            )
+            result = await FileUploadService(self.db).process_upload(
+                user_id=user_id,
+                file_content=fit_bytes,
+                filename=f"{garmin_id}.fit",
+                source="garmin",
+                source_id_override=garmin_id,
+            )
+        except Exception as exc:
+            logger.warning("Garmin import failed for %s: %s", garmin_id, exc)
+            report["status"] = "error"
+            report["failures"].append(
+                {"garmin_activity_id": garmin_id, "error": str(exc)}
+            )
+            report["failed"] = 1
+            return report
+
+        if result.get("status") == "duplicate":
+            report["skipped"] = 1
+            return report
+
+        report["synced"] = 1
+
+        # Bump the cursor if this import is the newest activity so far
+        if start_utc is not None:
+            naive_start = start_utc.replace(tzinfo=None)
+            if (
+                state.last_synced_activity_start is None
+                or naive_start > state.last_synced_activity_start
+            ):
+                state.last_synced_activity_start = naive_start
+        state.last_sync_at = datetime.now(timezone.utc)
+        self.db.commit()
+        return report
+
     # ----------------------------------------------------------------- helpers
 
     @staticmethod

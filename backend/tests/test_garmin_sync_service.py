@@ -303,6 +303,70 @@ class TestCursor:
         assert state.last_synced_activity_start == cursor_after_first
 
 
+class TestImportSingle:
+    async def test_imports_exact_id_bypassing_cross_source_check(self, sync_user, db_session, sync_service, stub_client, stub_pipeline):
+        # A manual twin exists (would trip the cross-source check in sync())
+        db_session.add(
+            Activity(
+                user_id=1,
+                source="file_upload",
+                source_id="manual_9",
+                name="Morning Run",
+                type="Run",
+                start_date=datetime(2026, 1, 1, 7, 0),
+                start_date_local=datetime(2026, 1, 1, 7, 0),
+                distance=5000.0,
+            )
+        )
+        db_session.commit()
+
+        stub_client.download_original_fit.return_value = FAKE_FIT
+        report = await sync_service.import_single(sync_user.id, "7001")
+        assert report["synced"] == 1
+        assert report["failed"] == 0
+        assert stub_pipeline[0]["source_id"] == "7001"
+        assert stub_pipeline[0]["source"] == "garmin"
+
+    async def test_skips_when_already_imported(self, sync_user, db_session, sync_service, stub_client, stub_pipeline):
+        db_session.add(
+            Activity(
+                user_id=1,
+                source="garmin",
+                source_id="7002",
+                name="Already there",
+                type="Run",
+                start_date=datetime(2026, 1, 1, 7, 0),
+                start_date_local=datetime(2026, 1, 1, 7, 0),
+                distance=5000.0,
+            )
+        )
+        db_session.commit()
+        report = await sync_service.import_single(sync_user.id, "7002")
+        assert report["skipped"] == 1
+        assert report["synced"] == 0
+        stub_client.download_original_fit.assert_not_awaited()
+
+    async def test_download_failure_reported(self, sync_user, db_session, sync_service, stub_client, stub_pipeline):
+        async def download(activity_id, cache_dir=None):
+            raise RuntimeError("gone")
+
+        stub_client.download_original_fit.side_effect = download
+        report = await sync_service.import_single(sync_user.id, "7003")
+        assert report["status"] == "error"
+        assert report["failed"] == 1
+        assert report["failures"][0]["garmin_activity_id"] == "7003"
+
+    async def test_cursor_bumps_when_newest(self, sync_user, db_session, sync_service, stub_client, stub_pipeline):
+        stub_client.download_original_fit.return_value = FAKE_FIT
+        await sync_service.import_single(sync_user.id, "7004")
+        state = (
+            db_session.query(SyncState)
+            .filter(SyncState.user_id == 1, SyncState.source == "garmin")
+            .first()
+        )
+        assert state.last_synced_activity_start is not None
+
+
 class TestFailureIsolation:
     async def test_download_failure_does_not_abort(self, sync_user, db_session, sync_service, stub_client, stub_pipeline):
         ok_item = _ga_item(6001, datetime(2026, 4, 1, 9, 0, tzinfo=timezone.utc), 4000)

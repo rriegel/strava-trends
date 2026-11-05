@@ -59,6 +59,39 @@ async def sync_garmin(
     return report
 
 
+@router.post("/garmin/{garmin_activity_id}")
+async def import_single_garmin_activity(
+    garmin_activity_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Import ONE specific Garmin activity (duplicate reconciliation:
+    delete the manual twin first, then call this to import the original).
+    """
+    user_id = 1  # dev default user
+
+    try:
+        assert_key_usable()
+    except GarminKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=str(exc),
+        )
+
+    service = GarminSyncService(db)
+    try:
+        report = await service.import_single(user_id, garmin_activity_id)
+    except (GarminKeyError, GarminApiError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    if report["failed"]:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=report["failures"][0]["error"] if report["failures"] else "Import failed",
+        )
+    return report
+
+
 @router.get("/garmin/status")
 async def garmin_sync_status(db: Session = Depends(get_db)):
     """Last-sync info + API key expiry countdown for the UI badges."""

@@ -138,6 +138,31 @@ class TestSyncEndpoint:
         assert response.status_code == 502
 
 
+class TestImportSingleEndpoint:
+    def test_import_single_success(self, client, sync_user, db_session, monkeypatch):
+        report = {"status": "success", "synced": 1, "skipped": 0, "failed": 0,
+                  "duplicates": [], "failures": []}
+
+        async def _fake(self, user_id, garmin_id):
+            assert garmin_id == "9999"
+            return report
+
+        monkeypatch.setattr(GarminSyncService, "import_single", _fake)
+        response = client.post("/sync/garmin/9999")
+        assert response.status_code == 200
+        assert response.json()["synced"] == 1
+
+    def test_import_single_failure_502(self, client, sync_user, db_session, monkeypatch):
+        async def _fake(self, user_id, garmin_id):
+            return {"status": "error", "synced": 0, "skipped": 0, "failed": 1,
+                    "duplicates": [],
+                    "failures": [{"garmin_activity_id": garmin_id, "error": "boom"}]}
+
+        monkeypatch.setattr(GarminSyncService, "import_single", _fake)
+        response = client.post("/sync/garmin/9998")
+        assert response.status_code == 502
+
+
 class TestStatusEndpoint:
     def test_status_unconfigured(self, client, db_session, monkeypatch):
         monkeypatch.setattr("config.settings.garmin_api_key", "")
