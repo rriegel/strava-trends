@@ -65,13 +65,27 @@ _token_cache = _TokenCache()
 
 
 def parse_key_expiry(raw: str) -> Optional[date]:
-    """Parse GARMIN_API_KEY_EXPIRES_AT (ISO date or datetime) -> date, or None."""
-    raw = (raw or "").strip()
+    """
+    Parse GARMIN_API_KEY_EXPIRES_AT -> date, or None if unset/unparseable.
+
+    Accepts ISO (YYYY-MM-DD, the documented format) and US (MM/DD/YYYY —
+    the format Garmin's Connect settings UI displays) plus optional
+    surrounding whitespace/quotes. Unparseable values return None (unknown
+    expiry) rather than raising so a typo never blocks syncs; the status
+    endpoint surfaces the unknown state.
+    """
+    raw = (raw or "").strip().strip('"').strip("'")
     if not raw:
         return None
     try:
         return date.fromisoformat(raw[:10])
     except ValueError:
+        pass
+    # US format MM/DD/YYYY (Garmin settings UI shows this)
+    try:
+        month, day, year = raw[:10].split("/")
+        return date(int(year), int(month), int(day))
+    except (ValueError, TypeError):
         return None
 
 

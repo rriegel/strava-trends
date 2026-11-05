@@ -45,6 +45,10 @@ class TestKeyExpiry:
     def test_parse_key_expiry_formats(self):
         assert parse_key_expiry("2099-01-01") == date(2099, 1, 1)
         assert parse_key_expiry("2099-01-01T00:00:00") == date(2099, 1, 1)
+        # US format (Garmin settings UI) + whitespace/quotes tolerance
+        assert parse_key_expiry("01/15/2099") == date(2099, 1, 15)
+        assert parse_key_expiry(' "01/15/2099" ') == date(2099, 1, 15)
+        assert parse_key_expiry("01/15/2099") != date(2099, 15, 1)  # month/day order fixed
         assert parse_key_expiry("") is None
         assert parse_key_expiry("garbage") is None
 
