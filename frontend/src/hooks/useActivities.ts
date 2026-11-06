@@ -1,46 +1,31 @@
-import { useState, useEffect, useCallback } from 'react'
-import { activitiesApi, type ActivitySummary, type ActivityFilters, type Pagination } from '../api/activities'
+import { useState, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { activitiesApi, type ActivityFilters } from '../api/activities'
 
-interface UseActivitiesState {
-  activities: ActivitySummary[]
-  pagination: Pagination | null
-  isLoading: boolean
-  error: string | null
-}
-
+/**
+ * Activities list state via react-query.
+ *
+ * History: this hook was hand-rolled useState+useEffect, which meant it did
+ * NOT subscribe to the query cache — every invalidateQueries(['activities'])
+ * (uploads via UPLOAD_INVALIDATED_KEYS, Garmin sync via SYNC_INVALIDATED_KEYS)
+ * was a no-op for this page and the list only updated on mount/filter change
+ * (bug: synced activities didn't appear until a manual page reload).
+ *
+ * Now a proper useQuery keyed on the active filters: any cache invalidation
+ * of ['activities', ...] refetches whatever is mounted. placeholderData
+ * keeps the previous page's list visible while filters change (no flash).
+ * The public surface (activities, pagination, isLoading, filters,
+ * updateFilters, setPage, deleteActivity, refresh) is unchanged.
+ */
 export function useActivities(initialFilters: ActivityFilters = {}) {
+  const queryClient = useQueryClient()
   const [filters, setFilters] = useState<ActivityFilters>(initialFilters)
-  const [state, setState] = useState<UseActivitiesState>({
-    activities: [],
-    pagination: null,
-    isLoading: true,
-    error: null,
+
+  const query = useQuery({
+    queryKey: ['activities', 'list', filters],
+    queryFn: () => activitiesApi.list(filters),
+    placeholderData: (prev) => prev,
   })
-
-  const fetchActivities = useCallback(async (currentFilters: ActivityFilters) => {
-    setState((prev) => ({ ...prev, isLoading: true, error: null }))
-    
-    try {
-      const response = await activitiesApi.list(currentFilters)
-      setState({
-        activities: response.activities,
-        pagination: response.pagination,
-        isLoading: false,
-        error: null,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load activities'
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: message,
-      }))
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchActivities(filters)
-  }, [filters, fetchActivities])
 
   const updateFilters = useCallback((newFilters: Partial<ActivityFilters>) => {
     setFilters((prev) => ({ ...prev, ...newFilters, page: 1 }))
@@ -50,35 +35,28 @@ export function useActivities(initialFilters: ActivityFilters = {}) {
     setFilters((prev) => ({ ...prev, page }))
   }, [])
 
-  const deleteActivity = useCallback(async (activityId: number) => {
-    try {
-      await activitiesApi.delete(activityId)
-      // Remove from local state
-      setState((prev) => ({
-        ...prev,
-        activities: prev.activities.filter((a) => a.id !== activityId),
-        pagination: prev.pagination
-          ? {
-              ...prev.pagination,
-              total: prev.pagination.total - 1,
-              total_pages: Math.max(
-                1,
-                Math.ceil((prev.pagination.total - 1) / prev.pagination.per_page)
-              ),
-            }
-          : null,
-      }))
-    } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Failed to delete activity')
-    }
-  }, [])
+  const deleteActivity = useCallback(
+    async (activityId: number) => {
+      try {
+        await activitiesApi.delete(activityId)
+        // Refetch the list (and any other mounted activity-derived queries)
+        await queryClient.invalidateQueries({ queryKey: ['activities'] })
+      } catch (err) {
+        throw new Error(err instanceof Error ? err.message : 'Failed to delete activity')
+      }
+    },
+    [queryClient]
+  )
 
   const refresh = useCallback(() => {
-    fetchActivities(filters)
-  }, [filters, fetchActivities])
+    queryClient.invalidateQueries({ queryKey: ['activities'] })
+  }, [queryClient])
 
   return {
-    ...state,
+    activities: query.data?.activities ?? [],
+    pagination: query.data?.pagination ?? null,
+    isLoading: query.isPending,
+    error: query.error ? (query.error as Error).message : null,
     filters,
     updateFilters,
     setPage,
