@@ -7,3 +7,7 @@ node_modules/
 dist/
 *.egg-info/
 .env.test
+
+# Garmin sync: cached original FIT files downloaded from Garmin Connect
+# (runtime data, personal activity files — never commit)
+backend/data/
