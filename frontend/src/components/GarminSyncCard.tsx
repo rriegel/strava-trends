@@ -48,19 +48,9 @@ export default function GarminSyncCard() {
       return next
     })
     try {
-      // 1. Delete the manual twin via the standard activities API.
-      await activitiesApi.delete(dup.existing_activity_id)
-      // 2. Import exactly that garmin id (single-activity endpoint —
-      //    deliberately skips the cross-source duplicate check).
-      await garminSyncApi.importSingle(dup.garmin_activity_id)
-      // 3. Refresh derived queries (the hook's mutation didn't run, so its
-      //    invalidation didn't either) + the status badge.
-      for (const key of ['activities', 'routes', 'route', 'route-compare', 'calendar', 'multi-trend', 'percentile-bands', 'currentUser']) {
-        queryClient.invalidateQueries({ queryKey: [key] })
-      }
-      queryClient.invalidateQueries({ queryKey: ['garminSyncStatus'] })
-      // 4. Row resolved: remove it from the review queue in place. The rest
-      //    of the queue is untouched — the user keeps working through it.
+      await replaceOne(dup)
+      // Row resolved: remove it from the review queue in place. The rest
+      // of the queue is untouched — the user keeps working through it.
       setReviewQueue((prev) =>
         prev ? prev.filter((d) => d.garmin_activity_id !== dup.garmin_activity_id) : prev
       )
@@ -77,6 +67,73 @@ export default function GarminSyncCard() {
         return next
       })
     }
+  }
+
+  const replaceOne = async (dup: GarminDuplicateEntry) => {
+    // 1. Delete the manual twin via the standard activities API.
+    await activitiesApi.delete(dup.existing_activity_id)
+    // 2. Import exactly that garmin id (single-activity endpoint —
+    //    deliberately skips the cross-source duplicate check).
+    await garminSyncApi.importSingle(dup.garmin_activity_id)
+    // 3. Refresh derived queries (the hook's mutation didn't run, so its
+    //    invalidation didn't either) + the status badge.
+    for (const key of ['activities', 'routes', 'route', 'route-compare', 'calendar', 'multi-trend', 'percentile-bands', 'currentUser']) {
+      queryClient.invalidateQueries({ queryKey: [key] })
+    }
+    queryClient.invalidateQueries({ queryKey: ['garminSyncStatus'] })
+  }
+
+  const handleKeep = (dup: GarminDuplicateEntry) => {
+    // Deliberate "keep existing" — removes the row from the review queue
+    // without touching any data. The manual upload stays; the garmin copy
+    // remains skipped (its id is still absent, so a later backfill would
+    // re-surface it, which is the correct conservative behavior).
+    setReviewQueue((prev) =>
+      prev ? prev.filter((d) => d.garmin_activity_id !== dup.garmin_activity_id) : prev
+    )
+  }
+
+  const [replaceAllBusy, setReplaceAllBusy] = useState(false)
+  const [replaceAllError, setReplaceAllError] = useState<string | null>(null)
+
+  const handleReplaceAll = async () => {
+    if (!reviewQueue) return
+    setReplaceAllBusy(true)
+    setReplaceAllError(null)
+    const queue = [...reviewQueue]
+    const failed: { id: string; error: string }[] = []
+    // Sequential (not parallel): each step deletes an activity + imports its
+    // replacement; parallel calls would race on the shared DB session cache
+    // and hammer Garmin. N is small (dozens at most), so sequential is fine.
+    for (const dup of queue) {
+      setReplacingIds((prev) => new Set(prev).add(dup.garmin_activity_id))
+      try {
+        await replaceOne(dup)
+        setReviewQueue((prev) =>
+          prev ? prev.filter((d) => d.garmin_activity_id !== dup.garmin_activity_id) : prev
+        )
+      } catch (err) {
+        failed.push({
+          id: dup.garmin_activity_id,
+          error: err instanceof Error ? err.message : 'Replace failed',
+        })
+        // Stop on first failure: remaining rows keep their twins intact and
+        // the user can retry them individually (states stay consistent).
+        break
+      } finally {
+        setReplacingIds((prev) => {
+          const next = new Set(prev)
+          next.delete(dup.garmin_activity_id)
+          return next
+        })
+      }
+    }
+    if (failed.length > 0) {
+      setReplaceAllError(
+        `Stopped at ${failed[0].id}: ${failed[0].error} — remaining duplicates left for individual review.`
+      )
+    }
+    setReplaceAllBusy(false)
   }
 
   const duplicates: GarminDuplicateEntry[] = reviewQueue ?? []
@@ -197,18 +254,34 @@ export default function GarminSyncCard() {
 
       {hasDuplicates && (
         <div className="mt-3 border-t pt-3" data-testid="garmin-duplicate-review">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <h3 className="text-sm font-semibold text-gray-900">
               Duplicate review ({duplicates.length} remaining)
             </h3>
-            <button
-              type="button"
-              onClick={() => setReviewQueue(null)}
-              className="text-xs text-gray-400 hover:text-gray-600"
-            >
-              dismiss review
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleReplaceAll}
+                disabled={replaceAllBusy || isSyncing}
+                className="text-xs bg-amber-600 text-white px-3 py-1.5 rounded hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="garmin-replace-all"
+              >
+                {replaceAllBusy ? 'Replacing all…' : `Replace all (${duplicates.length})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setReviewQueue(null)}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                dismiss review
+              </button>
+            </div>
           </div>
+          {replaceAllError && (
+            <p className="mb-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+              {replaceAllError}
+            </p>
+          )}
           <p className="text-xs text-gray-500 mb-2">
             These Garmin activities look like ones you already uploaded manually. Keep existing
             (default) or replace the manual copy with the Garmin original. Resolving one row
@@ -238,8 +311,17 @@ export default function GarminSyncCard() {
                   )}
                   <button
                     type="button"
+                    onClick={() => handleKeep(dup)}
+                    disabled={replaceAllBusy}
+                    className="text-xs text-gray-700 border border-gray-300 px-2.5 py-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="garmin-keep-existing"
+                  >
+                    Keep existing
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleReplace(dup)}
-                    disabled={replacingIds.has(dup.garmin_activity_id) || isSyncing}
+                    disabled={replacingIds.has(dup.garmin_activity_id) || replaceAllBusy || isSyncing}
                     className="text-xs bg-amber-600 text-white px-2.5 py-1 rounded hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {replacingIds.has(dup.garmin_activity_id) ? 'Replacing…' : 'Replace with Garmin'}
