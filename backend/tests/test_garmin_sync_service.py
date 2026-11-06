@@ -65,6 +65,7 @@ def stub_client():
     client.list_activities = AsyncMock(return_value=[])
     client.download_original_fit = AsyncMock(return_value=FAKE_FIT)
     client.pace_sleep = AsyncMock()
+    client.get_activity_detail = AsyncMock(return_value={})
     return client
 
 
@@ -358,6 +359,10 @@ class TestImportSingle:
 
     async def test_cursor_bumps_when_newest(self, sync_user, db_session, sync_service, stub_client, stub_pipeline):
         stub_client.download_original_fit.return_value = FAKE_FIT
+        # Detail must carry a usable start time — the cursor bump derives from it
+        stub_client.get_activity_detail.return_value = _ga_item(
+            "7004", datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc), 4000
+        )
         await sync_service.import_single(sync_user.id, "7004")
         state = (
             db_session.query(SyncState)
@@ -365,6 +370,7 @@ class TestImportSingle:
             .first()
         )
         assert state.last_synced_activity_start is not None
+        assert state.last_synced_activity_start.year == 2026
 
 
 class TestFailureIsolation:

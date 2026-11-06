@@ -139,7 +139,7 @@ class TestSyncEndpoint:
 
 
 class TestImportSingleEndpoint:
-    def test_import_single_success(self, client, sync_user, db_session, monkeypatch):
+    def test_import_single_success(self, client, sync_user, db_session, garmin_env_on, monkeypatch):
         report = {"status": "success", "synced": 1, "skipped": 0, "failed": 0,
                   "duplicates": [], "failures": []}
 
@@ -152,7 +152,7 @@ class TestImportSingleEndpoint:
         assert response.status_code == 200
         assert response.json()["synced"] == 1
 
-    def test_import_single_failure_502(self, client, sync_user, db_session, monkeypatch):
+    def test_import_single_failure_502(self, client, sync_user, db_session, garmin_env_on, monkeypatch):
         async def _fake(self, user_id, garmin_id):
             return {"status": "error", "synced": 0, "skipped": 0, "failed": 1,
                     "duplicates": [],
