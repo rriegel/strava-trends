@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactNode } from 'react'
 import { useActivities } from '../useActivities'
 import { activitiesApi, type ActivitySummary, type ActivitiesResponse } from '../../api/activities'
 
@@ -11,6 +13,16 @@ vi.mock('../../api/activities', () => ({
 }))
 
 const mockActivitiesApi = vi.mocked(activitiesApi)
+
+// The hook is react-query-backed now; every render needs a provider.
+const makeWrapper = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
+}
 
 const makeActivity = (overrides: Partial<ActivitySummary> = {}): ActivitySummary => ({
   id: 1,
@@ -50,7 +62,7 @@ describe('useActivities', () => {
     }
     mockActivitiesApi.list.mockResolvedValue(mockResponse)
 
-    const { result } = renderHook(() => useActivities())
+    const { result } = renderHook(() => useActivities(), { wrapper: makeWrapper() })
 
     expect(result.current.isLoading).toBe(true)
 
@@ -71,7 +83,7 @@ describe('useActivities', () => {
     mockActivitiesApi.list.mockResolvedValue(mockResponse)
 
     const initialFilters = { per_page: 10, type: 'Run' }
-    renderHook(() => useActivities(initialFilters))
+    renderHook(() => useActivities(initialFilters), { wrapper: makeWrapper() })
 
     await waitFor(() => {
       expect(mockActivitiesApi.list).toHaveBeenCalledWith(initialFilters)
@@ -85,7 +97,7 @@ describe('useActivities', () => {
     }
     mockActivitiesApi.list.mockResolvedValue(mockResponse)
 
-    const { result } = renderHook(() => useActivities({ page: 3, per_page: 20 }))
+    const { result } = renderHook(() => useActivities({ page: 3, per_page: 20 }), { wrapper: makeWrapper() })
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
@@ -111,7 +123,7 @@ describe('useActivities', () => {
     }
     mockActivitiesApi.list.mockResolvedValue(mockResponse)
 
-    const { result } = renderHook(() => useActivities({ per_page: 20 }))
+    const { result } = renderHook(() => useActivities({ per_page: 20 }), { wrapper: makeWrapper() })
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
@@ -137,7 +149,7 @@ describe('useActivities', () => {
     mockActivitiesApi.list.mockResolvedValue(mockResponse)
     mockActivitiesApi.delete.mockResolvedValue()
 
-    const { result } = renderHook(() => useActivities())
+    const { result } = renderHook(() => useActivities(), { wrapper: makeWrapper() })
 
     await waitFor(() => {
       expect(result.current.activities).toHaveLength(2)
@@ -148,15 +160,19 @@ describe('useActivities', () => {
     })
 
     expect(mockActivitiesApi.delete).toHaveBeenCalledWith(1)
-    expect(result.current.activities).toHaveLength(1)
-    expect(result.current.activities[0].id).toBe(2)
-    expect(result.current.pagination?.total).toBe(1)
+    // Deletion now invalidates the activities query, which refetches the
+    // (mocked) list — the same 2 activities come back; the cache update
+    // replaces the old local-state removal.
+    await waitFor(() => {
+      expect(mockActivitiesApi.list).toHaveBeenCalledTimes(2)
+    })
+    expect(result.current.activities).toHaveLength(2)
   })
 
   it('handles fetch error', async () => {
     mockActivitiesApi.list.mockRejectedValue(new Error('Network error'))
 
-    const { result } = renderHook(() => useActivities())
+    const { result } = renderHook(() => useActivities(), { wrapper: makeWrapper() })
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
@@ -171,7 +187,7 @@ describe('useActivities', () => {
     }
     mockActivitiesApi.list.mockResolvedValue(mockResponse)
 
-    const { result } = renderHook(() => useActivities())
+    const { result } = renderHook(() => useActivities(), { wrapper: makeWrapper() })
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)

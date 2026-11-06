@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import activities, trends, routes, auth, users, webhooks, uploads
+from routers import activities, trends, routes, auth, users, webhooks, uploads, sync
 from config import settings
 
 app = FastAPI(
@@ -26,6 +26,7 @@ app.include_router(trends.router, prefix="/trends", tags=["Trends"])
 app.include_router(routes.router, prefix="/routes", tags=["Routes"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(uploads.router, prefix="/uploads", tags=["File Uploads"])
+app.include_router(sync.router, prefix="/sync", tags=["Garmin Sync"])
 
 @app.get("/")
 async def root():
