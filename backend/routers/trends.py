@@ -4,9 +4,16 @@ from typing import Optional
 from datetime import datetime
 
 from database import get_db
+from models.user import User
 from services.trends_service import TrendsService
 
 router = APIRouter()
+
+
+def _user_distance_unit(db: Session, user_id: int) -> str:
+    """Look up the user's distance-unit preference ('metric' fallback if unset/unknown user)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    return (user.default_distance_unit or "metric") if user else "metric"
 
 
 @router.get("/metrics")
@@ -32,7 +39,8 @@ async def get_metric_trend(
         start_date=start_date,
         end_date=end_date,
         aggregation=aggregation,
-        route_id=route_id
+        route_id=route_id,
+        distance_unit=_user_distance_unit(db, user_id)
     )
 
 
@@ -61,7 +69,8 @@ async def get_multi_metric_trend(
         start_date=start_date,
         end_date=end_date,
         aggregation=aggregation,
-        route_id=route_id
+        route_id=route_id,
+        distance_unit=_user_distance_unit(db, user_id)
     )
 
 
@@ -92,5 +101,6 @@ async def get_percentile_bands(
         end_date=end_date,
         period=period,
         percentiles=percentiles_list,
-        route_id=route_id
+        route_id=route_id,
+        distance_unit=_user_distance_unit(db, user_id)
     )

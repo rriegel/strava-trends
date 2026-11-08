@@ -4,6 +4,8 @@ import mapboxgl from 'mapbox-gl'
 import polyline from '@mapbox/polyline'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { useRoutes, useRenameRoute } from '../hooks/useRoutes'
+import { useUnits } from '../context/units'
+import { formatElevation } from '../utils/format'
 import {
   loadViewport,
   createViewportSaver,
@@ -44,6 +46,7 @@ export default function RouteMap() {
   const renameRouteMutation = useRenameRoute()
 
   const { data, isLoading, error } = useRoutes({ per_page: 100 })
+  const { unit } = useUnits()
   const routes = useMemo(() => data?.routes || [], [data])
   const selectedRoute = useMemo(
     () => routes.find((r) => r.id === selectedRouteId) || null,
@@ -436,15 +439,25 @@ export default function RouteMap() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [renamingRouteId])
 
-  const formatDistance = (meters: number) => {
+  // Route distances are short-loop scale (0.3–8.5 km in practice); sub-km
+  // routes read better in plain meters, so this keeps its threshold logic but
+  // unit-aware. Imperial: < 1000 ft shows feet, otherwise miles.
+  const formatRouteDistance = (meters: number) => {
+    if (unit === 'imperial') {
+      const feet = meters * 3.280839895013123
+      if (feet < 1000) {
+        return `${feet.toFixed(0)} ft`
+      }
+      return `${(meters / 1609.344).toFixed(2)} mi`
+    }
     if (meters >= 1000) {
       return `${(meters / 1000).toFixed(1)} km`
     }
     return `${meters.toFixed(0)} m`
   }
 
-  const formatElevation = (meters: number) => {
-    return `${meters.toFixed(0)} m`
+  const formatRouteElevation = (meters: number) => {
+    return formatElevation(meters, unit)
   }
 
   return (
@@ -555,13 +568,13 @@ export default function RouteMap() {
                   <div>
                     <div className="text-gray-500 text-xs">Distance</div>
                     <div className="font-medium text-gray-900">
-                      {formatDistance(route.distance)}
+                      {formatRouteDistance(route.distance)}
                     </div>
                   </div>
                   <div>
                     <div className="text-gray-500 text-xs">Elevation</div>
                     <div className="font-medium text-gray-900">
-                      {formatElevation(route.elevation_gain)}
+                      {formatRouteElevation(route.elevation_gain)}
                     </div>
                   </div>
                   <div>
@@ -620,13 +633,13 @@ export default function RouteMap() {
               <div>
                 <div className="text-gray-500 text-xs">Distance</div>
                 <div className="font-medium text-gray-900">
-                  {formatDistance(selectedRoute.distance)}
+                  {formatRouteDistance(selectedRoute.distance)}
                 </div>
               </div>
               <div>
                 <div className="text-gray-500 text-xs">Elevation</div>
                 <div className="font-medium text-gray-900">
-                  {formatElevation(selectedRoute.elevation_gain)}
+                  {formatRouteElevation(selectedRoute.elevation_gain)}
                 </div>
               </div>
               <div>

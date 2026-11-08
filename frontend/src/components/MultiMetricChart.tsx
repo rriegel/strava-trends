@@ -9,9 +9,10 @@ import {
   Legend,
 } from 'recharts'
 import type { TrendData } from '../types'
-import { METRIC_COLORS, AVAILABLE_METRICS } from './MultiMetricSelector'
+import { METRIC_COLORS, AVAILABLE_METRICS, unitLabelFor } from './MultiMetricSelector'
 import { formatDateTime } from '../utils/formatDate'
 import { formatPaceDecimal, isPaceDisplay } from '../utils/format'
+import { useUnits } from '../context/units'
 
 interface MultiMetricChartProps {
   data: Record<string, TrendData>
@@ -28,6 +29,7 @@ export default function MultiMetricChart({
   showAggregated = false,
   height = 400,
 }: MultiMetricChartProps) {
+  const { unit } = useUnits()
   // Check if we have any data
   const hasData = metricTypes.some(
     (metric) => data[metric]?.data_points?.length > 0
@@ -84,7 +86,7 @@ export default function MultiMetricChart({
     return {
       label: metric?.label || metricType,
       color: METRIC_COLORS[metricType] || '#6b7280',
-      unit: metric?.unit || '',
+      unit: metric ? unitLabelFor(metric.unit, unit) : '',
     }
   }
 

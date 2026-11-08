@@ -6,7 +6,8 @@ import MultiMetricChart from '../components/MultiMetricChart'
 import MultiMetricSelector, { AVAILABLE_METRICS } from '../components/MultiMetricSelector'
 import TrendFilters from '../components/TrendFilters'
 import StatCard from '../components/StatCard'
-import { formatPaceDecimal, isPaceDisplay } from '../utils/format'
+import { formatPaceDecimal, isPaceDisplay, distanceUnitLabel, elevationUnitLabel, type UnitSystem } from '../utils/format'
+import { useUnits } from '../context/units'
 
 const VALID_METRICS = new Set(AVAILABLE_METRICS.map((m) => m.value))
 const VALID_AGGREGATIONS = new Set(['daily', 'weekly', 'monthly'])
@@ -44,6 +45,7 @@ function filtersFromParams(params: URLSearchParams): {
 export default function Trends() {
   const [searchParams, setSearchParams] = useSearchParams()
   const filters = filtersFromParams(searchParams)
+  const { unit } = useUnits()
 
   const selectedMetrics = filters.metrics
   const activityType = filters.activityType
@@ -224,7 +226,7 @@ export default function Trends() {
               title="Slope"
               value={primaryTrend?.slope.toFixed(3) || '0.000'}
               subtitle={primaryMetric === 'average_speed' || primaryMetric === 'grade_adjusted_pace'
-                ? 'min/km per day'
+                ? `${distanceUnitLabel(unit)} pace per day`
                 : 'per day'}
             />
           </div>
@@ -257,13 +259,13 @@ export default function Trends() {
                       <tr key={band.date}>
                         <td className="px-4 py-2 text-sm text-gray-900">{band.date}</td>
                         <td className="px-4 py-2 text-sm text-gray-600 text-right">
-                          {formatMetricValue(band.p10, primaryMetric)}
+                          {formatMetricValue(band.p10, primaryMetric, unit)}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-900 font-medium text-right">
-                          {formatMetricValue(band.p50, primaryMetric)}
+                          {formatMetricValue(band.p50, primaryMetric, unit)}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-600 text-right">
-                          {formatMetricValue(band.p90, primaryMetric)}
+                          {formatMetricValue(band.p90, primaryMetric, unit)}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-500 text-right">{band.count}</td>
                       </tr>
@@ -282,18 +284,22 @@ export default function Trends() {
 
 /**
  * Format a percentile-band value for display.
- * Percentile values arrive in display units (pace = min/km decimal minutes),
- * so pace metrics use formatPaceDecimal; everything else is a plain number.
+ * Percentile values arrive in display units already converted to the user's
+ * unit system (pace = decimal minutes per km or mi), so pace metrics use
+ * formatPaceDecimal; distance/elevation convert here; everything else is a
+ * plain number.
  */
-function formatMetricValue(value: number, metricType: string): string {
+function formatMetricValue(value: number, metricType: string, unit: UnitSystem): string {
   if (isPaceDisplay(metricType)) {
     return formatPaceDecimal(value)
   }
   if (metricType === 'total_elevation_gain') {
-    return `${value.toFixed(0)}m`
+    return `${unit === 'imperial' ? (value * 3.280839895013123).toFixed(0) : value.toFixed(0)}${elevationUnitLabel(unit)}`
   }
   if (metricType === 'distance') {
-    return `${(value / 1000).toFixed(2)}km`
+    return unit === 'imperial'
+      ? `${(value / 1609.344).toFixed(2)}mi`
+      : `${(value / 1000).toFixed(2)}km`
   }
   return value.toFixed(1)
 }

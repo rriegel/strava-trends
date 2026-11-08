@@ -15,7 +15,12 @@ class AnalyticsEngine:
     SPEED_METRICS = {"average_speed"}
     # Metrics stored as pace (min/km)
     PACE_METRICS = {"grade_adjusted_pace"}
-    
+    # Elevation gain stored in meters, displayed as m or ft
+    ELEVATION_METRICS = {"total_elevation_gain"}
+
+    M_PER_MI = 1609.344
+    FT_PER_M = 3.280839895013123  # exact: 1 ft = 0.3048 m
+
     @staticmethod
     def speed_to_pace(speed_mps: float) -> float:
         """
@@ -31,22 +36,37 @@ class AnalyticsEngine:
         return 1000.0 / speed_mps / 60.0
     
     @classmethod
-    def to_display_value(cls, metric_type: str, value: float) -> float:
-        """Convert a stored metric value to its display unit (pace metrics -> min/km)."""
+    def to_display_value(cls, metric_type: str, value: float, unit: str = "metric") -> float:
+        """
+        Convert a stored metric value to its display unit.
+        
+        unit: 'metric' or 'imperial' (the user's distance_unit preference).
+        Pace metrics: min/km in metric, min/mi in imperial (linear ×1.609344 —
+        unlike the m/s→pace reciprocal, so trend statistics scale cleanly).
+        Elevation: meters, or feet in imperial.
+        """
+        display = float(value)
         if metric_type in cls.SPEED_METRICS:
-            return cls.speed_to_pace(value)
-        return float(value)
+            display = cls.speed_to_pace(value)
+        elif metric_type in cls.ELEVATION_METRICS and unit == "imperial":
+            display = display * cls.FT_PER_M
+        if unit == "imperial" and (metric_type in cls.SPEED_METRICS or metric_type in cls.PACE_METRICS):
+            display = display * cls.M_PER_MI
+        return display
     
     @classmethod
-    def direction_threshold(cls, metric_type: str) -> float:
+    def direction_threshold(cls, metric_type: str, unit: str = "metric") -> float:
         """
         Slope threshold (per day) below which a trend counts as 'stable'.
         
         Unit-dependent: 0.01 min/km/day is ~1s/km slower per day, while 0.01
         bpm/day is imperceptible. Per-metric thresholds keep 'stable' meaningful.
+        Imperial multiplies pace thresholds by the km→mi factor (same perceptual
+        magnitude per mile).
         """
         if metric_type in cls.SPEED_METRICS or metric_type in cls.PACE_METRICS:
-            return 0.005   # min/km per day (~3s/km per week)
+            threshold = 0.005   # min/km per day (~3s/km per week)
+            return threshold * cls.M_PER_MI if unit == "imperial" else threshold
         if metric_type == "average_heartrate":
             return 0.1     # bpm per day
         if metric_type == "average_cadence":
@@ -99,7 +119,8 @@ class AnalyticsEngine:
         cls,
         dates: List[datetime],
         values: List[float],
-        metric_type: Optional[str] = None
+        metric_type: Optional[str] = None,
+        unit: str = "metric"
     ) -> Dict:
         """
         Calculate linear regression trend.
@@ -109,6 +130,8 @@ class AnalyticsEngine:
             values: Metric values (y axis) — MUST already be in display units
                     (min/km for pace metrics). Use to_display_value() first.
             metric_type: Optional metric type for a unit-aware 'stable' threshold.
+            unit: User's unit system ('metric'/'imperial') — pace thresholds
+                  scale with it (min/km vs min/mi per day).
         
         The R² and direction describe the values passed in. For pace metrics,
         'increasing' means slowing down (pace getting higher); the frontend
@@ -129,7 +152,7 @@ class AnalyticsEngine:
         p_value = float(reg.pvalue)  # type: ignore[reportAttributeAccessIssue]
         
         # Determine direction (threshold depends on metric units)
-        threshold = cls.direction_threshold(metric_type) if metric_type else 0.01
+        threshold = cls.direction_threshold(metric_type, unit) if metric_type else 0.01
         if slope > threshold:
             direction = "increasing"
         elif slope < -threshold:

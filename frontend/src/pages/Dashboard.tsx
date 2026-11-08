@@ -2,11 +2,13 @@ import StatCard from '../components/StatCard'
 import CalendarHeatmap from '../components/CalendarHeatmap'
 import { useCalendar } from '../hooks/useCalendar'
 import { formatDistance, formatDuration } from '../utils/format'
+import { useUnits } from '../context/units'
 
 export default function Dashboard() {
   // Rolling last-365-days window matches the heatmap's built-in range
   const { data, isLoading, error } = useCalendar()
   const summary = data?.summary
+  const { unit } = useUnits()
 
   return (
     <div>
@@ -30,7 +32,7 @@ export default function Dashboard() {
           />
           <StatCard
             title="Total Distance"
-            value={formatDistance(summary.total_distance)}
+            value={formatDistance(summary.total_distance, unit)}
             subtitle="last 12 months"
           />
           <StatCard
