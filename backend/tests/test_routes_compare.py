@@ -72,13 +72,13 @@ def _add_activity_with_streams(db_session, user_id, route, idx, with_time=True):
 
 
 class TestCompareEndpoint:
-    def test_full_payload(self, client, db_session, sample_user, sample_route):
+    def test_full_payload(self, client, db_session, sample_user, sample_route, auth_headers):
         a1 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=1)
         a2 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=2)
 
         response = client.get(
             f"/routes/{sample_route.id}/compare?activity_ids={a1.id},{a2.id}",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         data = response.json()
@@ -108,14 +108,14 @@ class TestCompareEndpoint:
             assert s["pace_s_per_km"] == pytest.approx(300, rel=0.05)
 
     def test_custom_checkpoint_interval(
-        self, client, db_session, sample_user, sample_route
+        self, client, db_session, sample_user, sample_route, auth_headers
     ):
         a1 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=1)
         a2 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=2)
 
         response = client.get(
             f"/routes/{sample_route.id}/compare?activity_ids={a1.id},{a2.id}&checkpoint_interval_m=400",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         first = response.json()["activities"][0]
@@ -126,7 +126,7 @@ class TestCompareEndpoint:
             assert s["pace_s_per_km"] == pytest.approx(300, rel=0.05)
 
     def test_checkpoint_interval_validation(
-        self, client, db_session, sample_user, sample_route
+        self, client, db_session, sample_user, sample_route, auth_headers
     ):
         a1 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=1)
         a2 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=2)
@@ -134,24 +134,24 @@ class TestCompareEndpoint:
 
         response = client.get(
             f"{base}&checkpoint_interval_m=0",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 422
         response = client.get(
             f"{base}&checkpoint_interval_m=6000",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 422
 
     def test_activity_without_time_streams_still_gets_track_and_summary(
-        self, client, db_session, sample_user, sample_route
+        self, client, db_session, sample_user, sample_route, auth_headers
     ):
         a1 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=1)
         a2 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=2, with_time=False)
 
         response = client.get(
             f"/routes/{sample_route.id}/compare?activity_ids={a1.id},{a2.id}",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         acts = {a["id"]: a for a in response.json()["activities"]}
@@ -160,7 +160,7 @@ class TestCompareEndpoint:
         assert len(acts[a2.id]["track"]) > 0  # map overlay still works
 
     def test_reverse_run_omits_race_plot(
-        self, client, db_session, sample_user, sample_route
+        self, client, db_session, sample_user, sample_route, auth_headers
     ):
         a1 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=1)
         # a2 runs the route southward (reversed relative to start->end north)
@@ -178,48 +178,48 @@ class TestCompareEndpoint:
 
         response = client.get(
             f"/routes/{sample_route.id}/compare?activity_ids={a1.id},{a2.id}",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         acts = {a["id"]: a for a in response.json()["activities"]}
         assert acts[a2.id]["direction_reversed"] is True
         assert acts[a2.id]["race_plot"] is None
 
-    def test_single_activity_rejected(self, client, sample_user, sample_route):
+    def test_single_activity_rejected(self, client, sample_user, sample_route, auth_headers):
         response = client.get(
             f"/routes/{sample_route.id}/compare?activity_ids=1",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 422
 
-    def test_six_activities_rejected(self, client, db_session, sample_user, sample_route):
+    def test_six_activities_rejected(self, client, db_session, sample_user, sample_route, auth_headers):
         acts = [_add_activity_with_streams(db_session, sample_user.id, sample_route, idx=i) for i in range(6)]
         ids = ",".join(str(a.id) for a in acts)
         response = client.get(
             f"/routes/{sample_route.id}/compare?activity_ids={ids}",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 422
 
-    def test_activity_not_on_route_404s(self, client, db_session, sample_user, sample_route):
+    def test_activity_not_on_route_404s(self, client, db_session, sample_user, sample_route, auth_headers):
         a1 = _add_activity_with_streams(db_session, sample_user.id, sample_route, idx=1)
         # an activity on a DIFFERENT (nonexistent) route
         response = client.get(
             f"/routes/{sample_route.id}/compare?activity_ids={a1.id},999999",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 404
 
-    def test_route_404(self, client, sample_user):
+    def test_route_404(self, client, sample_user, auth_headers):
         response = client.get(
             "/routes/999999/compare?activity_ids=1,2",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 404
 
-    def test_garbage_ids_422(self, client, sample_user, sample_route):
+    def test_garbage_ids_422(self, client, sample_user, sample_route, auth_headers):
         response = client.get(
             f"/routes/{sample_route.id}/compare?activity_ids=abc,def",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"},
+            headers=auth_headers,
         )
         assert response.status_code == 422
