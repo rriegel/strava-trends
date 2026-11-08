@@ -8,9 +8,10 @@ from models.activity_stream import ActivityStream
 
 
 @pytest.fixture
-def sample_route(db_session):
+def sample_route(db_session, sample_user):
     """Route running north, start (40.00, -74.00) -> end (40.05, -74.00)."""
     route = Route(
+        user_id=sample_user.id,
         name="Test Route",
         distance=5000.0,
         elevation_gain=40.0,

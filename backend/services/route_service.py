@@ -276,12 +276,15 @@ def find_or_create_route(
     encoded = _encoded_polyline(canonical)
     digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
-    # Tier 1: exact hash match
-    route = db.query(Route).filter(Route.polyline_hash == digest).first()
+    # Tier 1: exact hash match (per-user — routes are user-scoped)
+    route = db.query(Route).filter(
+        Route.user_id == activity.user_id,
+        Route.polyline_hash == digest,
+    ).first()
 
     # Tier 2: fuzzy match against near-start candidates
     if route is None:
-        route = _find_fuzzy_match(db, canonical)
+        route = _find_fuzzy_match(db, canonical, user_id=activity.user_id)
 
     if route is not None:
         _rollup_match(route, activity, canonical)
@@ -289,6 +292,7 @@ def find_or_create_route(
 
     # New route: seed metadata from this recording
     route = Route(
+        user_id=activity.user_id,
         name=getattr(activity, "name", None) or f"Route {getattr(activity, 'id', '?')}",
         polyline=encoded,
         polyline_hash=digest,
@@ -308,12 +312,14 @@ def find_or_create_route(
 
 
 def _find_fuzzy_match(
-    db: Session, canonical: Sequence[Sequence[float]]
+    db: Session, canonical: Sequence[Sequence[float]], user_id: int
 ) -> Optional[Route]:
     """
     Nearest-start candidate whose resampled path is within the fuzzy
     threshold. Bounding-box prefilter keeps the comparison set tiny
     (only routes starting within ~300m of this track's start).
+    Candidates are scoped to the activity's owner — users never match
+    each other's routes.
     """
     start = canonical[0]
     lat_pad = FUZZY_CANDIDATE_START_M / 111_000.0
@@ -323,6 +329,7 @@ def _find_fuzzy_match(
     candidates = (
         db.query(Route)
         .filter(
+            Route.user_id == user_id,
             Route.start_lat >= start[0] - lat_pad,
             Route.start_lat <= start[0] + lat_pad,
             Route.start_lng >= start[1] - lng_pad,

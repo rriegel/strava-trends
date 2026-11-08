@@ -5,7 +5,8 @@ POST /sync/garmin         — run a sync (incremental by default; ?backfill=true
                             for the initial history pull, optional &limit=N)
 GET  /sync/garmin/status  — last-sync info + key expiry countdown
 
-Auth note: like the other routers, dev mode uses user_id=1.
+Identity comes from the JWT access token; every endpoint is scoped to the
+authenticated user.
 """
 from datetime import date
 
@@ -15,6 +16,8 @@ from sqlalchemy.orm import Session
 from config import settings
 from database import get_db
 from models.sync_state import SyncState
+from models.user import User
+from routers.auth import get_current_user
 from services.garmin_client import (
     GarminClient,
     GarminApiError,
@@ -35,11 +38,10 @@ EXPIRY_WARNING_DAYS = 7
 async def sync_garmin(
     backfill: bool = Query(False, description="Ignore cursor; pull full history"),
     limit: int | None = Query(None, ge=1, le=2000, description="Cap for backfill"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Run a Garmin sync. Synchronous; returns the sync report."""
-    user_id = 1  # dev default user, consistent with other routers
-
     try:
         assert_key_usable()
     except GarminKeyError as exc:
@@ -50,7 +52,7 @@ async def sync_garmin(
 
     service = GarminSyncService(db)
     try:
-        report = await service.sync(user_id=user_id, backfill=backfill, limit=limit)
+        report = await service.sync(user_id=current_user.id, backfill=backfill, limit=limit)
     except (GarminKeyError, GarminApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
@@ -62,14 +64,13 @@ async def sync_garmin(
 @router.post("/garmin/{garmin_activity_id}")
 async def import_single_garmin_activity(
     garmin_activity_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Import ONE specific Garmin activity (duplicate reconciliation:
     delete the manual twin first, then call this to import the original).
     """
-    user_id = 1  # dev default user
-
     try:
         assert_key_usable()
     except GarminKeyError as exc:
@@ -80,7 +81,7 @@ async def import_single_garmin_activity(
 
     service = GarminSyncService(db)
     try:
-        report = await service.import_single(user_id, garmin_activity_id)
+        report = await service.import_single(current_user.id, garmin_activity_id)
     except (GarminKeyError, GarminApiError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
@@ -93,13 +94,14 @@ async def import_single_garmin_activity(
 
 
 @router.get("/garmin/status")
-async def garmin_sync_status(db: Session = Depends(get_db)):
+async def garmin_sync_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Last-sync info + API key expiry countdown for the UI badges."""
-    user_id = 1
-
     state = (
         db.query(SyncState)
-        .filter(SyncState.user_id == user_id, SyncState.source == "garmin")
+        .filter(SyncState.user_id == current_user.id, SyncState.source == "garmin")
         .first()
     )
 

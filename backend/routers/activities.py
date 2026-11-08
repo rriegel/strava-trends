@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from database import get_db
 from models.activity import Activity
 from models.activity_stream import ActivityStream
+from models.user import User
+from routers.auth import get_current_user
 
 router = APIRouter()
 
@@ -14,7 +16,7 @@ async def get_activity_calendar(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
     metric: str = Query("distance", description="Metric to aggregate: distance, count, moving_time"),
-    user_id: int = Query(1, description="User ID"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get activity data grouped by date for calendar heatmap"""
@@ -30,7 +32,7 @@ async def get_activity_calendar(
         func.sum(Activity.distance).label('total_distance'),
         func.sum(Activity.moving_time).label('total_moving_time')
     ).filter(
-        Activity.user_id == user_id,
+        Activity.user_id == current_user.id,
         Activity.start_date_local >= start_date,
         Activity.start_date_local <= end_date
     ).group_by(
@@ -139,11 +141,12 @@ async def list_activities(
     sort_order: str = "desc",
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """List activities with filtering and pagination"""
-    query = db.query(Activity)
-    
+    query = db.query(Activity).filter(Activity.user_id == current_user.id)
+
     # Apply filters
     if type:
         query = query.filter(Activity.type == type)
@@ -159,18 +162,18 @@ async def list_activities(
         query = query.filter(Activity.terrain_type == terrain_type)
     if route_id:
         query = query.filter(Activity.route_id == route_id)
-    
+
     # Apply sorting
     sort_column = getattr(Activity, sort_by, Activity.start_date)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
-    
+
     # Pagination
     total = query.count()
     activities = query.offset((page - 1) * per_page).limit(per_page).all()
-    
+
     return {
         "activities": [
             {
@@ -208,24 +211,31 @@ async def list_activities(
     }
 
 @router.get("/{activity_id}")
-async def get_activity(activity_id: int, db: Session = Depends(get_db)):
+async def get_activity(
+    activity_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Get activity details"""
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    activity = db.query(Activity).filter(
+        Activity.id == activity_id,
+        Activity.user_id == current_user.id,
+    ).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    
+
     # Get computed metrics
     from models.computed_metric import ComputedMetric
     computed_metrics = db.query(ComputedMetric).filter(
         ComputedMetric.activity_id == activity_id
     ).all()
-    
+
     # Get effort groups
     from models.effort_group import EffortGroup
     effort_groups = db.query(EffortGroup).filter(
         EffortGroup.activity_id == activity_id
     ).all()
-    
+
     return {
         "id": activity.id,
         "strava_id": activity.strava_id,
@@ -281,34 +291,38 @@ async def get_activity(activity_id: int, db: Session = Depends(get_db)):
 @router.delete("/{activity_id}")
 async def delete_activity(
     activity_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete an activity and its associated data"""
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    activity = db.query(Activity).filter(
+        Activity.id == activity_id,
+        Activity.user_id == current_user.id,
+    ).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    
+
     # Delete associated streams
     db.query(ActivityStream).filter(
         ActivityStream.activity_id == activity_id
     ).delete(synchronize_session=False)
-    
+
     # Delete associated computed metrics
     from models.computed_metric import ComputedMetric
     db.query(ComputedMetric).filter(
         ComputedMetric.activity_id == activity_id
     ).delete(synchronize_session=False)
-    
+
     # Delete associated effort groups
     from models.effort_group import EffortGroup
     db.query(EffortGroup).filter(
         EffortGroup.activity_id == activity_id
     ).delete(synchronize_session=False)
-    
+
     # Delete the activity
     db.delete(activity)
     db.commit()
-    
+
     return {"message": "Activity deleted successfully"}
 
 @router.get("/{activity_id}/streams")
@@ -316,21 +330,25 @@ async def get_activity_streams(
     activity_id: int,
     stream_types: Optional[str] = None,
     resolution: str = "medium",
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get activity streams (time-series data)"""
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    activity = db.query(Activity).filter(
+        Activity.id == activity_id,
+        Activity.user_id == current_user.id,
+    ).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    
+
     query = db.query(ActivityStream).filter(ActivityStream.activity_id == activity_id)
-    
+
     if stream_types:
         types = stream_types.split(",")
         query = query.filter(ActivityStream.stream_type.in_(types))
-    
+
     streams = query.all()
-    
+
     return {
         "activity_id": activity_id,
         "streams": {
@@ -347,29 +365,33 @@ async def get_activity_streams(
 @router.get("/{activity_id}/effort")
 async def get_activity_effort(
     activity_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get effort zone breakdown for an activity"""
-    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    activity = db.query(Activity).filter(
+        Activity.id == activity_id,
+        Activity.user_id == current_user.id,
+    ).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    
+
     from services.effort_classifier import EffortClassifier
     classifier = EffortClassifier(db)
-    
+
     # Get or compute effort analysis
     effort_data = classifier.get_activity_effort(activity_id)
-    
+
     if not effort_data:
         # Try to analyze if we have HR data but haven't analyzed yet
         effort_data = classifier.analyze_activity(activity_id)
-    
+
     if not effort_data:
         raise HTTPException(
-            status_code=404, 
+            status_code=404,
             detail="No heart rate data available for effort analysis"
         )
-    
+
     return {
         "activity_id": activity_id,
         "max_hr": effort_data['max_hr'],

@@ -18,7 +18,7 @@ import httpx
 from datetime import datetime, timedelta, timezone
 
 router = APIRouter()
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 # ---------------------------------------------------------------------------
@@ -87,10 +87,15 @@ def _revoke_all_refresh_tokens(user_id: int, db: Session) -> None:
 # ---------------------------------------------------------------------------
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
 ) -> User:
     """Get current authenticated user from a JWT access token."""
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
     payload = decode_access_token(credentials.credentials)
     if payload is None:
         raise HTTPException(
