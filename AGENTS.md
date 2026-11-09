@@ -80,6 +80,22 @@ keep anything a feature writes at runtime under a gitignored path).
   when it was the last link. Any new deletion path must reuse that helper.
 - Routes are user-scoped (migration 006): `polyline_hash` unique per
   `(user_id, polyline_hash)`. Never create Route rows without `user_id`.
+- `make reset-activities` — confirmation-gated ("type wipe") TRUNCATE of activity data
+  (users kept). Use after parser changes: old activities keep whatever streams the old
+  parser persisted; re-upload to rebuild.
+
+## Stream conventions
+
+- Per-point `time` (relative seconds from start) and `distance` (cumulative meters)
+  streams persist for FIT and GPX uploads (`activity_streams`, series_type 'time').
+- FIT: timestamps + cumulative distances come from the parser, aligned 1:1.
+- GPX: points can lack time OR GPS — build streams only from strictly paired points
+  (timestamp + GPS), accumulating haversine distance from the last paired point.
+- TCX parser is summary-only (no streams) — stream features are FIT/GPX-only.
+- Race curve stays RAW (pauses = vertical time jumps at fixed distance); split
+  interpolation collapses standing points keeping FIRST arrival, so pause seconds land
+  in the following segment.
+- Route matching is two-tier: exact polyline hash, then ≤50 m fuzzy.
 
 ## Backend conventions
 
@@ -131,3 +147,6 @@ keep anything a feature writes at runtime under a gitignored path).
   standalone script that imports the service directly.
 - To reproduce user-reported request failures: run the server locally against
   the real dev DB and replay the exact payload.
+- Failed `make setup` can leave a partial `.venv` that masquerades as healthy: it runs
+  alembic but dies on `import scipy` at uvicorn boot, and a re-run skips to "already
+  exists". Recovery: `rm -rf backend/.venv && make setup`, then `make dev`.
