@@ -95,6 +95,14 @@ def user(db_session):
     return u
 
 
+@pytest.fixture
+def auth_headers(user):
+    """Override conftest's auth_headers: token for THIS module's user fixture."""
+    from utils.security import create_access_token
+    token = create_access_token(user.id, 0)
+    return {"Authorization": f"Bearer {token}"}
+
+
 class TestCanonicalization:
     def test_rejects_short_tracks(self):
         assert canonicalize(LOOP[:5]) == []
@@ -252,7 +260,7 @@ class TestBackfill:
 
 
 class TestRoutesEndpoint:
-    def test_list_routes_returns_built_route(self, client, db_session, user):
+    def test_list_routes_returns_built_route(self, client, db_session, user, auth_headers):
         activity = make_activity(user)
         db_session.add(activity)
         db_session.commit()
@@ -260,7 +268,7 @@ class TestRoutesEndpoint:
         build_route_for_activity(db_session, activity)
         db_session.commit()
 
-        response = client.get("/routes")
+        response = client.get("/routes", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["pagination"]["total"] == 1
@@ -269,12 +277,12 @@ class TestRoutesEndpoint:
         assert r["activity_count"] == 1
         assert r["polyline"]  # encoded polyline present for the map
 
-    def test_list_routes_empty(self, client, db_session, user):
-        response = client.get("/routes")
+    def test_list_routes_empty(self, client, db_session, user, auth_headers):
+        response = client.get("/routes", headers=auth_headers)
         assert response.status_code == 200
         assert response.json()["routes"] == []
 
-    def test_rename_route(self, client, db_session, user):
+    def test_rename_route(self, client, db_session, user, auth_headers):
         activity = make_activity(user)
         db_session.add(activity)
         db_session.commit()
@@ -284,7 +292,7 @@ class TestRoutesEndpoint:
 
         route_id = db_session.query(Route).first().id
 
-        response = client.patch(f"/routes/{route_id}", json={"name": "Beecher Loop"})
+        response = client.patch(f"/routes/{route_id}", headers=auth_headers, json={"name": "Beecher Loop"})
         assert response.status_code == 200
         assert response.json()["name"] == "Beecher Loop"
 
@@ -292,7 +300,7 @@ class TestRoutesEndpoint:
         db_session.expire_all()
         assert db_session.query(Route).first().name == "Beecher Loop"
 
-    def test_rename_route_strips_whitespace(self, client, db_session, user):
+    def test_rename_route_strips_whitespace(self, client, db_session, user, auth_headers):
         activity = make_activity(user)
         db_session.add(activity)
         db_session.commit()
@@ -301,11 +309,11 @@ class TestRoutesEndpoint:
         db_session.commit()
         route_id = db_session.query(Route).first().id
 
-        response = client.patch(f"/routes/{route_id}", json={"name": "  Padded Name  "})
+        response = client.patch(f"/routes/{route_id}", headers=auth_headers, json={"name": "  Padded Name  "})
         assert response.status_code == 200
         assert response.json()["name"] == "Padded Name"
 
-    def test_rename_route_rejects_whitespace_only_name(self, client, db_session, user):
+    def test_rename_route_rejects_whitespace_only_name(self, client, db_session, user, auth_headers):
         activity = make_activity(user)
         db_session.add(activity)
         db_session.commit()
@@ -315,9 +323,9 @@ class TestRoutesEndpoint:
         route_id = db_session.query(Route).first().id
 
         # Whitespace-only would strip to empty — endpoint must reject it
-        response = client.patch(f"/routes/{route_id}", json={"name": "   "})
+        response = client.patch(f"/routes/{route_id}", headers=auth_headers, json={"name": "   "})
         assert response.status_code == 422
 
-    def test_rename_route_404(self, client, db_session, user):
-        response = client.patch("/routes/99999", json={"name": "Ghost"})
+    def test_rename_route_404(self, client, db_session, user, auth_headers):
+        response = client.patch("/routes/99999", headers=auth_headers, json={"name": "Ghost"})
         assert response.status_code == 404

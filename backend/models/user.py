@@ -35,6 +35,10 @@ class User(Base):
     preferred_hr_zones = Column(JSONB)  # {"zone_1": {"min": 0, "max": 115}, ...}
     max_hr = Column(Integer)  # User-configured max HR override (bpm)
 
+    # Auth (email + password login) — nullable for OAuth-provider-only users
+    password_hash = Column(String(255), nullable=True)
+    token_version = Column(Integer, default=0)  # bump to invalidate all access tokens
+
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

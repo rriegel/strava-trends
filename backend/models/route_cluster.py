@@ -8,6 +8,10 @@ class RouteCluster(Base):
     __tablename__ = "route_clusters"
 
     id = Column(BIGINT, primary_key=True, index=True)
+
+    # Ownership: clusters are per-user, derived from per-user routes.
+    user_id = Column(BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
     centroid_route_id = Column(BIGINT, ForeignKey("routes.id", ondelete="SET NULL"), index=True)
 
     # Cluster metrics

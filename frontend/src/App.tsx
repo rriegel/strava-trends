@@ -7,9 +7,10 @@ import RouteCompare from './pages/RouteCompare'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
 import Layout from './components/Layout'
+import { getAccessToken } from './api/client'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem('auth_token')
+  const token = getAccessToken()
   if (!token) {
     return <Navigate to="/login" replace />
   }

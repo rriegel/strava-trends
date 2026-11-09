@@ -46,9 +46,9 @@ def stub_sync(monkeypatch):
     return {"calls": calls, "report": report}
 
 
-def _seed_state(db_session, start=None):
+def _seed_state(db_session, user_id, start=None):
     state = SyncState(
-        user_id=1,
+        user_id=user_id,
         source="garmin",
         last_synced_activity_start=start,
         last_sync_at=datetime(2026, 5, 1, 10, 0),
@@ -59,10 +59,16 @@ def _seed_state(db_session, start=None):
 
 
 @pytest.fixture
-def sync_user(db_session):
-    """Create the dev user (id=1) that the sync router hardcodes."""
-    from sqlalchemy import text
+def auth_headers(sync_user):
+    """Override conftest's auth_headers: token for THIS module's sync_user."""
+    from utils.security import create_access_token
+    token = create_access_token(sync_user.id, 0)
+    return {"Authorization": f"Bearer {token}"}
 
+
+@pytest.fixture
+def sync_user(db_session):
+    """Authenticated user for the sync router (identity from JWT)."""
     user = User(
         strava_athlete_id=None,
         username="syncuser",
@@ -71,14 +77,8 @@ def sync_user(db_session):
         email="sync@example.com",
     )
     db_session.add(user)
-    db_session.flush()
-    db_session.execute(
-        text("SELECT setval(pg_get_serial_sequence('users','id'), :v)"),
-        {"v": max(user.id, 1)},
-    )
     db_session.commit()
     db_session.refresh(user)
-    assert user.id == 1, f"dev user must be id 1, got {user.id}"
     return user
 
 
@@ -94,20 +94,20 @@ def _isolate_garmin_env(monkeypatch):
 
 
 class TestSyncEndpoint:
-    def test_sync_requires_key(self, client, db_session):
-        response = client.post("/sync/garmin")
+    def test_sync_requires_key(self, client, db_session, sync_user, auth_headers):
+        response = client.post("/sync/garmin", headers=auth_headers)
         assert response.status_code == 423
         assert "not configured" in response.json()["detail"]
 
-    def test_sync_expired_key_423(self, client, db_session, monkeypatch):
+    def test_sync_expired_key_423(self, client, db_session, sync_user, auth_headers, monkeypatch):
         monkeypatch.setattr("config.settings.garmin_api_key", "k")
         monkeypatch.setattr("config.settings.garmin_api_key_expires_at", "2020-01-01")
-        response = client.post("/sync/garmin")
+        response = client.post("/sync/garmin", headers=auth_headers)
         assert response.status_code == 423
         assert "EXPIRED" in response.json()["detail"]
 
-    def test_sync_success_returns_report(self, client, sync_user, db_session, garmin_env_on, stub_sync):
-        response = client.post("/sync/garmin")
+    def test_sync_success_returns_report(self, client, sync_user, db_session, garmin_env_on, stub_sync, auth_headers):
+        response = client.post("/sync/garmin", headers=auth_headers)
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "success"
@@ -115,31 +115,31 @@ class TestSyncEndpoint:
         assert body["skipped"] == 1
         assert stub_sync["calls"][0]["backfill"] is False
 
-    def test_sync_backfill_params_forwarded(self, client, sync_user, db_session, garmin_env_on, stub_sync):
-        response = client.post("/sync/garmin?backfill=true&limit=50")
+    def test_sync_backfill_params_forwarded(self, client, sync_user, db_session, garmin_env_on, stub_sync, auth_headers):
+        response = client.post("/sync/garmin?backfill=true&limit=50", headers=auth_headers)
         assert response.status_code == 200
         assert stub_sync["calls"][0]["backfill"] is True
         assert stub_sync["calls"][0]["limit"] == 50
 
-    def test_sync_reports_error_when_all_failed(self, client, sync_user, db_session, garmin_env_on, stub_sync):
+    def test_sync_reports_error_when_all_failed(self, client, sync_user, db_session, garmin_env_on, stub_sync, auth_headers):
         stub_sync["report"].update({"synced": 0, "skipped": 0, "failed": 3, "failures": [{"garmin_activity_id": "1", "error": "x"}]})
-        response = client.post("/sync/garmin")
+        response = client.post("/sync/garmin", headers=auth_headers)
         assert response.status_code == 200
         assert response.json()["status"] == "error"
 
-    def test_sync_transport_failure_502(self, client, sync_user, db_session, garmin_env_on, monkeypatch):
+    def test_sync_transport_failure_502(self, client, sync_user, db_session, garmin_env_on, monkeypatch, auth_headers):
         from services.garmin_client import GarminApiError
 
         async def _boom(self, user_id, backfill=False, limit=None):
             raise GarminApiError("Garmin unreachable")
 
         monkeypatch.setattr(GarminSyncService, "sync", _boom)
-        response = client.post("/sync/garmin")
+        response = client.post("/sync/garmin", headers=auth_headers)
         assert response.status_code == 502
 
 
 class TestImportSingleEndpoint:
-    def test_import_single_success(self, client, sync_user, db_session, garmin_env_on, monkeypatch):
+    def test_import_single_success(self, client, sync_user, db_session, garmin_env_on, monkeypatch, auth_headers):
         report = {"status": "success", "synced": 1, "skipped": 0, "failed": 0,
                   "duplicates": [], "failures": []}
 
@@ -148,36 +148,37 @@ class TestImportSingleEndpoint:
             return report
 
         monkeypatch.setattr(GarminSyncService, "import_single", _fake)
-        response = client.post("/sync/garmin/9999")
+        response = client.post("/sync/garmin/9999", headers=auth_headers)
         assert response.status_code == 200
         assert response.json()["synced"] == 1
 
-    def test_import_single_failure_502(self, client, sync_user, db_session, garmin_env_on, monkeypatch):
+    def test_import_single_failure_502(self, client, sync_user, db_session, garmin_env_on, monkeypatch, auth_headers):
         async def _fake(self, user_id, garmin_id):
             return {"status": "error", "synced": 0, "skipped": 0, "failed": 1,
                     "duplicates": [],
                     "failures": [{"garmin_activity_id": garmin_id, "error": "boom"}]}
 
         monkeypatch.setattr(GarminSyncService, "import_single", _fake)
-        response = client.post("/sync/garmin/9998")
+        response = client.post("/sync/garmin/9998", headers=auth_headers)
         assert response.status_code == 502
 
 
 class TestStatusEndpoint:
-    def test_status_unconfigured(self, client, db_session, monkeypatch):
+    def test_status_unconfigured(self, client, db_session, sync_user, auth_headers, monkeypatch):
         monkeypatch.setattr("config.settings.garmin_api_key", "")
-        response = client.get("/sync/garmin/status")
+        response = client.get("/sync/garmin/status", headers=auth_headers)
         assert response.status_code == 200
         body = response.json()
         assert body["key_configured"] is False
         assert body["last_sync_at"] is None
 
-    def test_status_with_state_and_expiry(self, client, sync_user, db_session, garmin_env_on):
+    def test_status_with_state_and_expiry(self, client, sync_user, db_session, garmin_env_on, auth_headers):
         _seed_state(
             db_session,
+            sync_user.id,
             start=datetime(2026, 5, 1, 9, 0, tzinfo=timezone.utc).replace(tzinfo=None),
         )
-        response = client.get("/sync/garmin/status")
+        response = client.get("/sync/garmin/status", headers=auth_headers)
         assert response.status_code == 200
         body = response.json()
         assert body["key_configured"] is True
@@ -186,7 +187,7 @@ class TestStatusEndpoint:
         assert body["last_sync_at"] is not None
         assert body["cursor"] is not None
 
-    def test_status_expiry_warning_window(self, client, sync_user, db_session, monkeypatch):
+    def test_status_expiry_warning_window(self, client, sync_user, db_session, monkeypatch, auth_headers):
         # 5 days out → warning true
         monkeypatch.setattr("config.settings.garmin_api_key", "k")
         monkeypatch.setattr("config.settings.garmin_api_key_expires_at", "2099-01-01")
@@ -195,15 +196,15 @@ class TestStatusEndpoint:
 
         soon = (date.today() + timedelta(days=5)).isoformat()
         monkeypatch.setattr("config.settings.garmin_api_key_expires_at", soon)
-        response = client.get("/sync/garmin/status")
+        response = client.get("/sync/garmin/status", headers=auth_headers)
         body = response.json()
         assert body["key_warning"] is True
         assert body["key_days_left"] == 5
 
-    def test_status_expired_flag(self, client, sync_user, db_session, monkeypatch):
+    def test_status_expired_flag(self, client, sync_user, db_session, monkeypatch, auth_headers):
         monkeypatch.setattr("config.settings.garmin_api_key", "k")
         monkeypatch.setattr("config.settings.garmin_api_key_expires_at", "2020-06-01")
-        response = client.get("/sync/garmin/status")
+        response = client.get("/sync/garmin/status", headers=auth_headers)
         body = response.json()
         assert body["key_expired"] is True
         assert body["key_days_left"] < 0
