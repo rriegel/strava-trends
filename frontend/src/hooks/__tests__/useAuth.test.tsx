@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
 
 // vi.mock is hoisted, so we use vi.hoisted for the mock references
 const { mockGetCurrentUser, mockApiLogout } = vi.hoisted(() => ({
@@ -29,9 +30,12 @@ vi.mock('../../api/client', () => ({
 const { useAuth } = await import('../useAuth')
 
 function renderHookInRouter() {
+  const queryClient = new QueryClient()
   return renderHook(() => useAuth(), {
     wrapper: ({ children }: { children: React.ReactNode }) => (
-      <MemoryRouter>{children}</MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>{children}</MemoryRouter>
+      </QueryClientProvider>
     ),
   })
 }
@@ -108,6 +112,72 @@ describe('useAuth', () => {
     })
 
     expect(mockApiLogout).toHaveBeenCalledWith('test-refresh')
+  })
+
+  it('clears the React Query cache on login (account switch must not leak user A data)', async () => {
+    // Simulates: user A logged in, queries cached, then user B logs in.
+    // The cache must be dropped, or user B's pages render user A's data
+    // (staleTime 5min would serve it without refetching).
+    localStorage.setItem('auth_token', 'old-access')
+    localStorage.setItem('refresh_token', 'old-refresh')
+    mockGetCurrentUser.mockResolvedValue({
+      id: 99, username: 'user-b', firstname: '', lastname: '',
+    })
+
+    const cacheKeys: unknown[][] = []
+    const queryClient = new QueryClient()
+    const clearSpy = vi.spyOn(queryClient, 'clear')
+    const setQueryDataSpy = vi.spyOn(queryClient, 'setQueryData')
+    setQueryDataSpy.mockImplementation((key: unknown) => cacheKeys.push(key as unknown[]))
+
+    function renderWithCache() {
+      return renderHook(() => useAuth(), {
+        wrapper: ({ children }: { children: React.ReactNode }) => (
+          <QueryClientProvider client={queryClient}>
+            <MemoryRouter>{children}</MemoryRouter>
+          </QueryClientProvider>
+        ),
+      })
+    }
+
+    // user A session populates the cache (activities etc.)
+    const first = renderWithCache()
+    await act(async () => {})
+    // eslint-disable-next-line testing-library/no-node-access
+    queryClient.setQueryData(['activities'], [{ id: 1 }])
+    queryClient.setQueryData(['routes'], [{ id: 2 }])
+    first.unmount()
+
+    // user B logs in
+    const second = renderWithCache()
+    await act(async () => {
+      second.result.current.login('new-access', 'new-refresh')
+    })
+
+    expect(clearSpy).toHaveBeenCalled()
+  })
+
+  it('logout clears the React Query cache', async () => {
+    localStorage.setItem('auth_token', 't')
+    localStorage.setItem('refresh_token', 'r')
+    const { result } = renderHookInRouter()
+    await act(async () => {})
+
+    const qc = new QueryClient()
+    const clearSpy = vi.spyOn(qc, 'clear')
+    // Re-render the hook with our spy client to observe clear() on logout
+    const utils = renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={qc}>
+          <MemoryRouter>{children}</MemoryRouter>
+        </QueryClientProvider>
+      ),
+    })
+    await act(async () => {})
+    await act(async () => {
+      await utils.result.current.logout()
+    })
+    expect(clearSpy).toHaveBeenCalled()
   })
 
   it('logout still clears local state when server revocation fails', async () => {

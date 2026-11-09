@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { getCurrentUser, logout as apiLogout } from '../api/auth'
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from '../api/client'
 import type { User } from '../types'
@@ -8,6 +9,7 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     const token = getAccessToken()
@@ -21,19 +23,21 @@ export function useAuth() {
     }
   }, [])
 
-  const login = (accessToken: string, refreshToken: string) => {
+  const adoptSession = (accessToken: string, refreshToken: string) => {
+    // Account switch in the same tab: the previous user's cached queries
+    // (staleTime 5min) would render for the new user. Drop everything.
+    queryClient.clear()
     setTokens(accessToken, refreshToken)
     getCurrentUser()
       .then((res) => setUser(res))
       .catch(() => clearTokens())
   }
 
-  const register = (accessToken: string, refreshToken: string) => {
-    setTokens(accessToken, refreshToken)
-    getCurrentUser()
-      .then((res) => setUser(res))
-      .catch(() => clearTokens())
-  }
+  const login = (accessToken: string, refreshToken: string) =>
+    adoptSession(accessToken, refreshToken)
+
+  const register = (accessToken: string, refreshToken: string) =>
+    adoptSession(accessToken, refreshToken)
 
   const logout = async () => {
     const refreshToken = getRefreshToken()
@@ -46,6 +50,7 @@ export function useAuth() {
     }
     clearTokens()
     setUser(null)
+    queryClient.clear()
     navigate('/login', { replace: true })
   }
 
