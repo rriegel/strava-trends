@@ -173,6 +173,83 @@ class TestCrossUserIsolation:
         bob = client.get(f"/routes/{alice_route.id}", headers=bob_headers)
         assert bob.status_code == 404
 
+    def test_delete_last_activity_deletes_route(
+        self, client, db_session, two_users, alice_headers, alice_route
+    ):
+        """Deleting the LAST linked activity removes its route (GPS-derived data)."""
+        resp = client.delete(
+            f"/activities/{alice_route.id and db_session.query(Activity).filter(Activity.route_id == alice_route.id).first().id}",
+            headers=alice_headers,
+        )
+        assert resp.status_code == 200
+        assert db_session.query(Route).filter(Route.id == alice_route.id).count() == 0
+
+    def test_delete_one_of_several_keeps_route_and_recomputes(
+        self, client, db_session, two_users, alice_headers, alice_route
+    ):
+        """Route survives while other linked activities remain; rollup recomputed."""
+        a, _ = two_users
+        # a second run on the same route
+        act2 = Activity(
+            user_id=a.id, source="strava", source_id="alice_run_2",
+            name="Second Run", type="Run", start_date=datetime(2026, 1, 16, 8, 0, 0),
+            start_date_local=datetime(2026, 1, 16, 8, 0, 0),
+            moving_time=1700, distance=5100.0, total_elevation_gain=60.0,
+        )
+        act2.route_id = alice_route.id
+        db_session.add(act2)
+        db_session.commit()
+
+        first = db_session.query(Activity).filter(Activity.source_id == "alice_run").first()
+        resp = client.delete(f"/activities/{first.id}", headers=alice_headers)
+        assert resp.status_code == 200
+
+        route = db_session.query(Route).filter(Route.id == alice_route.id).first()
+        assert route is not None  # survived
+        assert route.activity_count == 1
+        assert float(route.distance) == 5100.0
+        assert float(route.elevation_gain) == 60.0
+
+    def test_delete_activity_without_route_is_noop_for_routes(
+        self, client, db_session, two_users, alice_headers, alice_route
+    ):
+        """An activity with no route link doesn't touch routes."""
+        a, _ = two_users
+        routeless = Activity(
+            user_id=a.id, source="strava", source_id="no_route_run",
+            name="Treadmill Run", type="Run",
+            start_date=datetime(2026, 2, 1, 8, 0, 0),
+            start_date_local=datetime(2026, 2, 1, 8, 0, 0),
+            moving_time=1500, distance=4000.0,
+        )  # never linked to a route (no GPS / not matched)
+        db_session.add(routeless)
+        db_session.commit()
+
+        resp = client.delete(f"/activities/{routeless.id}", headers=alice_headers)
+        assert resp.status_code == 200
+        # alice_route and its linked activity are untouched
+        assert db_session.query(Route).filter(Route.id == alice_route.id).count() == 1
+        assert db_session.query(Activity).filter(Activity.route_id == alice_route.id).count() == 1
+
+    def test_route_survives_unrelated_activity_delete(
+        self, client, db_session, two_users, alice_headers, alice_route
+    ):
+        """Deleting an activity of a DIFFERENT route doesn't touch this one."""
+        a, _ = two_users
+        other_route = Route(
+            user_id=a.id, name="Other", polyline="x", polyline_hash="hash_other",
+            activity_count=1,
+        )
+        db_session.add(other_route)
+        db_session.commit()
+        orphan = db_session.query(Activity).filter(Activity.route_id == other_route.id).first()
+        # no activity linked to other_route — deleting alice's activity must not affect either
+        first = db_session.query(Activity).filter(Activity.route_id == alice_route.id).first()
+        resp = client.delete(f"/activities/{first.id}", headers=alice_headers)
+        assert resp.status_code == 200
+        assert db_session.query(Route).filter(Route.id == other_route.id).count() == 1
+        assert db_session.query(Route).filter(Route.id == alice_route.id).count() == 0
+
     def test_route_rename_scoped(self, client, alice_headers, bob_headers, alice_route):
         bob = client.patch(
             f"/routes/{alice_route.id}", headers=bob_headers, json={"name": "Bob Was Here"}

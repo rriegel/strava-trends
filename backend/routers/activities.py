@@ -7,6 +7,7 @@ from database import get_db
 from models.activity import Activity
 from models.activity_stream import ActivityStream
 from models.user import User
+from services.route_service import refresh_route_after_activity_delete
 from routers.auth import get_current_user
 
 router = APIRouter()
@@ -318,6 +319,11 @@ async def delete_activity(
     db.query(EffortGroup).filter(
         EffortGroup.activity_id == activity_id
     ).delete(synchronize_session=False)
+
+    # Route cleanup: a route is derived from GPS tracks and may back several
+    # activities (activity_count). Deleting one of several just refreshes the
+    # rollup; deleting the LAST linked activity removes the route.
+    refresh_route_after_activity_delete(db, activity)
 
     # Delete the activity
     db.delete(activity)

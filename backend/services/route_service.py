@@ -469,3 +469,43 @@ def backfill_routes(db: Session) -> Dict[str, int]:
         db.commit()
 
     return stats
+
+def refresh_route_after_activity_delete(db: Session, activity: Activity) -> None:
+    """
+    Post-delete route maintenance (caller commits).
+
+    - Decrement the linked route's denormalized activity_count.
+    - Refresh distance/elevation as the average over the REMAINING linked
+      activities (matches how matches roll up: converging average over runs).
+    - If the deleted activity was the route's LAST link, delete the route —
+      a route with no activities is unreconstructable and shouldn't linger.
+    - Cluster membership: routes.cluster_id is FK ON DELETE SET NULL upstream;
+      if the removed route was a cluster's centroid, the FK nulls the
+      cluster's centroid_route_id automatically.
+    """
+    if activity.route_id is None:
+        return
+
+    route = db.query(Route).filter(Route.id == activity.route_id).first()
+    if route is None:
+        return
+
+    remaining = (
+        db.query(Activity)
+        .filter(
+            Activity.route_id == route.id,
+            Activity.id != activity.id,
+        )
+        .all()
+    )
+
+    if not remaining:
+        db.delete(route)
+        return
+
+    n = len(remaining)
+    route.activity_count = n
+    dists = [float(a.distance) for a in remaining if a.distance is not None]
+    route.distance = sum(dists) / n if dists else None
+    elevs = [float(a.total_elevation_gain) for a in remaining if a.total_elevation_gain is not None]
+    route.elevation_gain = sum(elevs) / n if elevs else None
