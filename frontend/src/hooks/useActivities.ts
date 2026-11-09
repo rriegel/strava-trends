@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { activitiesApi, type ActivityFilters } from '../api/activities'
+import { ACTIVITY_DATA_INVALIDATED_KEYS } from '../api/queryKeys'
 
 /**
  * Activities list state via react-query.
@@ -39,8 +40,12 @@ export function useActivities(initialFilters: ActivityFilters = {}) {
     async (activityId: number) => {
       try {
         await activitiesApi.delete(activityId)
-        // Refetch the list (and any other mounted activity-derived queries)
-        await queryClient.invalidateQueries({ queryKey: ['activities'] })
+        // A delete can remove a route entirely (last-activity rule) and
+        // change every derived rollup — invalidate the full activity-data
+        // family, not just the activities list.
+        for (const key of ACTIVITY_DATA_INVALIDATED_KEYS) {
+          await queryClient.invalidateQueries({ queryKey: [key] })
+        }
       } catch (err) {
         throw new Error(err instanceof Error ? err.message : 'Failed to delete activity')
       }
