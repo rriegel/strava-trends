@@ -23,8 +23,8 @@ setup:
 		if [ -d .venv ]; then \
 			echo "  .venv already exists"; \
 		elif command -v uv >/dev/null 2>&1; then \
-			echo "  creating venv with uv..."; \
-			uv venv .venv && \
+			echo "  creating venv with uv (pinned to 3.13 — 3.14 has no scipy 1.14.1 wheel)..."; \
+			uv venv --python 3.13 .venv && \
 			uv pip install --python .venv/bin/python -q -r requirements.txt; \
 		else \
 			echo "  creating venv with python3..."; \
