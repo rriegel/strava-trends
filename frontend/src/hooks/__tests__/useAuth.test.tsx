@@ -160,7 +160,7 @@ describe('useAuth', () => {
   it('logout clears the React Query cache', async () => {
     localStorage.setItem('auth_token', 't')
     localStorage.setItem('refresh_token', 'r')
-    const { result } = renderHookInRouter()
+    renderHookInRouter()
     await act(async () => {})
 
     const qc = new QueryClient()
