@@ -9,7 +9,6 @@ export interface TrendParams {
   start_date?: string
   end_date?: string
   aggregation?: 'daily' | 'weekly' | 'monthly'
-  user_id?: number
 }
 
 export interface PercentileParams {
@@ -21,7 +20,6 @@ export interface PercentileParams {
   end_date?: string
   percentiles?: string
   period?: 'weekly' | 'monthly'
-  user_id?: number
 }
 
 export async function getMultiMetricTrend(

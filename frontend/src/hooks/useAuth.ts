@@ -1,32 +1,53 @@
 import { useState, useEffect } from 'react'
-import apiClient from '../api/client'
+import { useNavigate } from 'react-router-dom'
+import { getCurrentUser, logout as apiLogout } from '../api/auth'
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from '../api/client'
 import type { User } from '../types'
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token')
+    const token = getAccessToken()
     if (token) {
-      apiClient.get('/users/me')
-        .then((res) => setUser(res.data))
-        .catch(() => localStorage.removeItem('auth_token'))
+      getCurrentUser()
+        .then((res) => setUser(res))
+        .catch(() => clearTokens())
         .finally(() => setLoading(false))
     } else {
       setLoading(false)
     }
   }, [])
 
-  const login = (token: string) => {
-    localStorage.setItem('auth_token', token)
-    apiClient.get('/users/me').then((res) => setUser(res.data))
+  const login = (accessToken: string, refreshToken: string) => {
+    setTokens(accessToken, refreshToken)
+    getCurrentUser()
+      .then((res) => setUser(res))
+      .catch(() => clearTokens())
   }
 
-  const logout = () => {
-    localStorage.removeItem('auth_token')
+  const register = (accessToken: string, refreshToken: string) => {
+    setTokens(accessToken, refreshToken)
+    getCurrentUser()
+      .then((res) => setUser(res))
+      .catch(() => clearTokens())
+  }
+
+  const logout = async () => {
+    const refreshToken = getRefreshToken()
+    if (refreshToken) {
+      try {
+        await apiLogout(refreshToken)
+      } catch {
+        // Token already revoked or expired — the client clears state either way.
+      }
+    }
+    clearTokens()
     setUser(null)
+    navigate('/login', { replace: true })
   }
 
-  return { user, loading, login, logout, isAuthenticated: !!user }
+  return { user, loading, login, register, logout, isAuthenticated: !!user }
 }
