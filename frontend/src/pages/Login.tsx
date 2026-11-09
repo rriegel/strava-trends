@@ -3,6 +3,21 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { login as apiLogin, register as apiRegister } from '../api/auth'
 import { setTokens } from '../api/client'
 
+/** FastAPI 422s carry a validation array; other errors carry a string detail. */
+function extractErrorMessage(err: any, fallback: string): string {
+  const detail = err?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0]
+    const field = Array.isArray(first.loc) ? first.loc[first.loc.length - 1] : 'input'
+    if (first.type === 'string_too_short') {
+      return `Password must be at least 8 characters (you entered ${first.input?.length ?? 0}).`
+    }
+    return `${field}: ${first.msg}`.replace(/^body: /, '')
+  }
+  return fallback
+}
+
 export default function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
@@ -17,6 +32,14 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    // Client-side validation mirrors the backend contract (backend enforces
+    // again — this is for instant feedback, not security).
+    if (mode === 'register' && password.length < 8) {
+      setError(`Password must be at least 8 characters (you entered ${password.length}).`)
+      return
+    }
+
     setSubmitting(true)
     try {
       const response =
@@ -26,12 +49,11 @@ export default function Login() {
       setTokens(response.access_token, response.refresh_token)
       navigate(redirect, { replace: true })
     } catch (err: any) {
-      const detail = err.response?.data?.detail
-      if (mode === 'register') {
-        setError(detail || 'Registration failed. Please try again.')
-      } else {
-        setError(detail || 'Invalid email or password.')
-      }
+      const fallback =
+        mode === 'register'
+          ? 'Registration failed. Please try again.'
+          : 'Invalid email or password.'
+      setError(extractErrorMessage(err, fallback))
     } finally {
       setSubmitting(false)
     }
@@ -81,6 +103,11 @@ export default function Login() {
               placeholder={mode === 'register' ? 'At least 8 characters' : 'Your password'}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-strava-orange focus:border-transparent"
             />
+            {mode === 'register' && password.length > 0 && password.length < 8 && (
+              <p className="mt-1 text-sm text-amber-600">
+                {8 - password.length} more character{8 - password.length === 1 ? '' : 's'} needed
+              </p>
+            )}
           </div>
 
           {error && (

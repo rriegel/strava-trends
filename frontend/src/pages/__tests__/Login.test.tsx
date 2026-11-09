@@ -125,4 +125,50 @@ describe('Login page', () => {
     })
     expect(setTokens).not.toHaveBeenCalled()
   })
+
+  it('renders a readable message on FastAPI 422 validation errors (detail is an array)', async () => {
+    const user = userEvent.setup()
+    mockedRegister.mockRejectedValue({
+      response: {
+        status: 422,
+        data: {
+          detail: [
+            {
+              type: 'string_too_short',
+              loc: ['body', 'password'],
+              msg: 'String should have at least 8 characters',
+              input: 'Test!!1',
+              ctx: { min_length: 8 },
+            },
+          ],
+        },
+      },
+    })
+    renderLogin()
+
+    await user.click(screen.getByRole('button', { name: /create one/i }))
+    await user.type(screen.getByLabelText(/email/i), 'new@example.com')
+    await user.type(screen.getByLabelText(/password/i), 'password123')
+    await user.click(screen.getByRole('button', { name: /create account/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/password must be at least 8 characters/i)).toBeInTheDocument()
+    })
+    // The error must be text, not an object — React would crash rendering an array
+    expect(screen.getByText(/password must be at least 8 characters/i).textContent).not.toContain('[object')
+  })
+
+  it('blocks submission client-side when the password is under 8 characters', async () => {
+    const user = userEvent.setup()
+    renderLogin()
+
+    await user.click(screen.getByRole('button', { name: /create one/i }))
+    await user.type(screen.getByLabelText(/email/i), 'new@example.com')
+    await user.type(screen.getByLabelText(/password/i), 'Test!!1')
+    await user.click(screen.getByRole('button', { name: /create account/i }))
+
+    expect(mockedRegister).not.toHaveBeenCalled()
+    expect(screen.getByText(/password must be at least 8 characters \(you entered 7\)/i)).toBeInTheDocument()
+    expect(screen.getByText(/1 more character needed/i)).toBeInTheDocument()
+  })
 })
