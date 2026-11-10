@@ -308,11 +308,12 @@ class TestImperialUnitConversion:
     # --- calculate_trend threshold propagation ---
 
     def test_calculate_trend_imperial_threshold(self):
-        # A slope that is 'stable' in min/mi terms but would read 'increasing'
-        # if the min/km threshold were wrongly applied to min/mi values:
-        # slope 0.006 min/mi/day > 0.005 (metric threshold) but < 0.00805 (imperial)
+        # Slope must be expressed PER DAY: _dates() spaces points 7 days apart,
+        # so the value step per point is 0.006*7 to yield 0.006 min/mi/day.
+        # 0.006 > 0.005 (metric threshold → 'increasing') but < 0.00805
+        # (imperial threshold → 'stable') — the contrast under test.
         dates = self._dates(10)
-        values = [8.0 + 0.006 * i for i in range(10)]
+        values = [8.0 + 0.006 * 7 * i for i in range(10)]
         trend = AnalyticsEngine.calculate_trend(dates, values, metric_type="average_speed", unit="imperial")
         assert trend["direction"] == "stable"
         trend_metric = AnalyticsEngine.calculate_trend(dates, values, metric_type="average_speed")
