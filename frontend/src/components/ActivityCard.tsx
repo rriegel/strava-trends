@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { formatDistance, formatDuration, formatPace, formatElevation, formatHeartrate } from '../utils/format'
+import { formatDistance, formatDuration, formatPace, formatElevation, formatHeartrate, distanceUnitLabel } from '../utils/format'
+import { useUnits } from '../context/units'
 import type { ActivitySummary } from '../api/activities'
 import ConfirmDialog from './ConfirmDialog'
 
@@ -11,6 +12,7 @@ interface ActivityCardProps {
 
 export default function ActivityCard({ activity, onClick, onDelete }: ActivityCardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const { unit } = useUnits()
 
   const activityTypeIcons: Record<string, string> = {
     Run: '🏃',
@@ -79,7 +81,7 @@ export default function ActivityCard({ activity, onClick, onDelete }: ActivityCa
             <div>
               <div className="text-gray-500 text-xs">Distance</div>
               <div className="font-semibold text-gray-900">
-                {formatDistance(activity.distance)}
+                {formatDistance(activity.distance, unit)}
               </div>
             </div>
           )}
@@ -97,7 +99,7 @@ export default function ActivityCard({ activity, onClick, onDelete }: ActivityCa
             <div>
               <div className="text-gray-500 text-xs">Pace</div>
               <div className="font-semibold text-gray-900">
-                {formatPace(activity.average_speed)}/km
+                {formatPace(activity.average_speed, unit)}/{distanceUnitLabel(unit)}
               </div>
             </div>
           )}
@@ -106,7 +108,7 @@ export default function ActivityCard({ activity, onClick, onDelete }: ActivityCa
             <div>
               <div className="text-gray-500 text-xs">Elevation</div>
               <div className="font-semibold text-gray-900">
-                {formatElevation(activity.total_elevation_gain)}
+                {formatElevation(activity.total_elevation_gain, unit)}
               </div>
             </div>
           )}

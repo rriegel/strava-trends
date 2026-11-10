@@ -34,7 +34,8 @@ async def get_metric_trend(
         start_date=start_date,
         end_date=end_date,
         aggregation=aggregation,
-        route_id=route_id
+        route_id=route_id,
+        distance_unit=current_user.default_distance_unit or "metric"
     )
 
 
@@ -63,7 +64,8 @@ async def get_multi_metric_trend(
         start_date=start_date,
         end_date=end_date,
         aggregation=aggregation,
-        route_id=route_id
+        route_id=route_id,
+        distance_unit=current_user.default_distance_unit or "metric"
     )
 
 
@@ -90,5 +92,6 @@ async def get_percentile_bands(
         distance_bucket=distance_bucket,
         route_id=route_id,
         percentiles=percentiles_list,
-        period=period
+        period=period,
+        distance_unit=current_user.default_distance_unit or "metric"
     )

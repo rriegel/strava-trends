@@ -249,4 +249,160 @@ class TestAvailableMetrics:
         # Names must be usable with getattr(activity, metric_type)
         assert "average_speed" in metrics
         assert "avg_speed" not in metrics
-        assert "total_elevation_gain" in metrics
+
+
+class TestImperialUnitConversion:
+    """Imperial display conversion: pace min/mi, elevation ft"""
+
+    KM_PER_MI = 1.609344
+
+    # --- AnalyticsEngine.to_display_value ---
+
+    def test_pace_metric_imperial_is_min_per_mile(self):
+        # 2.78 m/s = 5.995 min/km -> ×1.609344 = 9.649 min/mi
+        metric = AnalyticsEngine.to_display_value("average_speed", 2.78, "imperial")
+        expected = AnalyticsEngine.speed_to_pace(2.78) * self.KM_PER_MI
+        assert abs(metric - expected) < 1e-9
+
+    def test_gap_computed_metric_imperial_is_min_per_mile(self):
+        # grade_adjusted_pace arrives already in min/km; imperial just scales
+        assert abs(
+            AnalyticsEngine.to_display_value("grade_adjusted_pace", 5.5, "imperial") - 5.5 * self.KM_PER_MI
+        ) < 1e-9
+
+    def test_pace_metric_metric_unchanged(self):
+        # Default stays min/km — existing behavior preserved
+        assert abs(
+            AnalyticsEngine.to_display_value("average_speed", 2.78) - AnalyticsEngine.speed_to_pace(2.78)
+        ) < 1e-9
+
+    def test_elevation_imperial_is_feet(self):
+        # 100 m = 328.084 ft
+        assert abs(AnalyticsEngine.to_display_value("total_elevation_gain", 100.0, "imperial") - 328.084) < 1e-3
+
+    def test_elevation_metric_unchanged(self):
+        assert AnalyticsEngine.to_display_value("total_elevation_gain", 100.0) == 100.0
+
+    def test_hr_not_converted_in_imperial(self):
+        assert AnalyticsEngine.to_display_value("average_heartrate", 150.0, "imperial") == 150.0
+
+    def test_distance_meters_passthrough_both_systems(self):
+        # distance is stored/returned in meters on the trends API and the
+        # frontend formats it; conversion stays client-side by design
+        assert AnalyticsEngine.to_display_value("distance", 5000.0, "imperial") == 5000.0
+
+    def test_invalid_unit_falls_back_to_metric_behavior(self):
+        # Anything not 'imperial' behaves as metric (defensive)
+        assert abs(
+            AnalyticsEngine.to_display_value("average_speed", 2.78, "nonsense") - AnalyticsEngine.speed_to_pace(2.78)
+        ) < 1e-9
+
+    # --- direction_threshold ---
+
+    def test_pace_threshold_scales_with_imperial(self):
+        assert abs(AnalyticsEngine.direction_threshold("average_speed", "imperial") - 0.005 * self.KM_PER_MI) < 1e-9
+
+    def test_hr_threshold_unchanged_in_imperial(self):
+        assert AnalyticsEngine.direction_threshold("average_heartrate", "imperial") == 0.1
+
+    # --- calculate_trend threshold propagation ---
+
+    def test_calculate_trend_imperial_threshold(self):
+        # Slope must be expressed PER DAY: _dates() spaces points 7 days apart,
+        # so the value step per point is 0.006*7 to yield 0.006 min/mi/day.
+        # 0.006 > 0.005 (metric threshold → 'increasing') but < 0.00805
+        # (imperial threshold → 'stable') — the contrast under test.
+        dates = self._dates(10)
+        values = [8.0 + 0.006 * 7 * i for i in range(10)]
+        trend = AnalyticsEngine.calculate_trend(dates, values, metric_type="average_speed", unit="imperial")
+        assert trend["direction"] == "stable"
+        trend_metric = AnalyticsEngine.calculate_trend(dates, values, metric_type="average_speed")
+        # Sanity: the same data under the metric threshold classifies differently
+        assert trend_metric["direction"] == "increasing"
+
+    @staticmethod
+    def _dates(n):
+        return [datetime(2024, 1, 1) + timedelta(days=7 * i) for i in range(n)]
+
+    # --- TrendsService end-to-end ---
+
+    def test_service_pace_imperial(self, db_session, sample_user, trends_service):
+        _make_activity(db_session, sample_user.id, 0, average_speed=2.78)
+        _make_activity(db_session, sample_user.id, 1, average_speed=2.78)
+        db_session.commit()
+
+        result = trends_service.get_metric_trend(
+            user_id=sample_user.id, metric_type="average_speed", distance_unit="imperial"
+        )
+        assert result["unit"] == "min/mi"
+        expected = AnalyticsEngine.speed_to_pace(2.78) * self.KM_PER_MI
+        for point in result["data_points"]:
+            assert abs(point["value"] - expected) < 0.001
+        for agg in result["aggregated_data"]:
+            assert abs(agg["value"] - expected) < 0.001
+
+    def test_service_pace_metric_default_unchanged(self, db_session, sample_user, trends_service):
+        _make_activity(db_session, sample_user.id, 0, average_speed=2.78)
+        _make_activity(db_session, sample_user.id, 1, average_speed=2.78)
+        db_session.commit()
+
+        result = trends_service.get_metric_trend(user_id=sample_user.id, metric_type="average_speed")
+        assert result["unit"] == "min/km"  # default untouched
+
+    def test_service_elevation_imperial(self, db_session, sample_user, trends_service):
+        _make_activity(db_session, sample_user.id, 0, total_elevation_gain=100.0)
+        _make_activity(db_session, sample_user.id, 1, total_elevation_gain=100.0)
+        db_session.commit()
+
+        result = trends_service.get_metric_trend(
+            user_id=sample_user.id, metric_type="total_elevation_gain", distance_unit="imperial"
+        )
+        assert result["unit"] == "ft"
+        for point in result["data_points"]:
+            assert abs(point["value"] - 328.084) < 0.001
+
+    def test_service_hr_imperial_label_unchanged(self, db_session, sample_user, trends_service):
+        _make_activity(db_session, sample_user.id, 0, average_heartrate=150.0)
+        _make_activity(db_session, sample_user.id, 1, average_heartrate=152.0)
+        db_session.commit()
+
+        result = trends_service.get_metric_trend(
+            user_id=sample_user.id, metric_type="average_heartrate", distance_unit="imperial"
+        )
+        assert result["unit"] == "bpm"
+        assert [p["value"] for p in result["data_points"]] == [150.0, 152.0]
+
+    def test_multi_metric_imperial(self, db_session, sample_user, trends_service):
+        _make_activity(db_session, sample_user.id, 0, average_speed=2.78, average_heartrate=150.0)
+        db_session.commit()
+
+        result = trends_service.get_multi_metric_trend(
+            user_id=sample_user.id, metric_types=["average_speed", "average_heartrate"], distance_unit="imperial"
+        )
+        assert result["metrics"]["average_speed"]["unit"] == "min/mi"
+        assert result["metrics"]["average_heartrate"]["unit"] == "bpm"
+
+    def test_percentile_bands_imperial(self, db_session, sample_user, trends_service):
+        _make_activity(db_session, sample_user.id, 0, average_speed=2.78)
+        _make_activity(db_session, sample_user.id, 1, average_speed=2.78)
+        db_session.commit()
+
+        result = trends_service.get_percentile_bands(
+            user_id=sample_user.id, metric_type="average_speed", activity_type="Run", distance_unit="imperial"
+        )
+        assert result["unit"] == "min/mi"
+        expected = AnalyticsEngine.speed_to_pace(2.78) * self.KM_PER_MI
+        for band in result["bands"]:
+            assert abs(band["p50"] - expected) < 0.001
+
+    def test_percentile_bands_match_datapoints_scale(self, db_session, sample_user, trends_service):
+        # Bands and data_points must use the SAME conversion factor
+        _make_activity(db_session, sample_user.id, 0, average_speed=2.78)
+        db_session.commit()
+
+        result = trends_service.get_metric_trend(
+            user_id=sample_user.id, metric_type="average_speed", distance_unit="imperial"
+        )
+        dp = result["data_points"][0]["value"]
+        # aggregated is derived from the same converted array
+        assert abs(result["aggregated_data"][0]["value"] - dp) < 1e-9

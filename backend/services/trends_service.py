@@ -25,7 +25,8 @@ DISTANCE_BUCKETS = {
     "marathon": (40000, 44000),
 }
 
-# Unit label for each metric, as returned in the "unit" field
+# Base unit label for each metric, before applying the user's distance-unit
+# preference. Unit-system-aware labels come from metric_unit().
 METRIC_UNITS = {
     "average_speed": "min/km",
     "grade_adjusted_pace": "min/km",
@@ -35,6 +36,12 @@ METRIC_UNITS = {
     "distance": "m",
     "hr_pace_ratio": "",
     "heart_rate_drift": "%",
+}
+
+# What each base unit becomes in the imperial system
+IMPERIAL_UNIT_LABELS = {
+    "min/km": "min/mi",
+    "m": "ft",
 }
 
 
@@ -54,7 +61,8 @@ class TrendsService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         aggregation: Optional[str] = None,
-        route_id: Optional[int] = None
+        route_id: Optional[int] = None,
+        distance_unit: str = "metric"
     ) -> dict:
         """
         Get trend metrics for a specific metric type (in display units).
@@ -69,10 +77,13 @@ class TrendsService:
             end_date: Optional end date filter
             aggregation: Aggregation period (daily, weekly, monthly)
             route_id: Optional route filter — only activities on this route
+            distance_unit: User's unit system ('metric' or 'imperial'); governs
+                pace (min/km vs min/mi) and elevation (m vs ft) display
 
         Returns:
             Dictionary with data_points, aggregated_data, trend and the metric's
-            display unit. Pace metrics carry min/km values and "min/km" unit.
+            display unit. Pace metrics carry converted values and the matching
+            unit label.
         """
         period = aggregation if aggregation else "weekly"
         computed_metric_types = ["hr_pace_ratio", "grade_adjusted_pace", "running_economy", "heart_rate_drift"]
@@ -103,6 +114,7 @@ class TrendsService:
             period=period,
             activity_type=activity_type,
             triples=triples,
+            distance_unit=distance_unit,
         )
 
     # ------------------------------------------------------------------
@@ -196,12 +208,13 @@ class TrendsService:
         period: str,
         activity_type: Optional[str],
         triples: List[tuple],
+        distance_unit: str = "metric",
     ) -> dict:
         """
         Convert raw values to display units, then compute trend / aggregation /
         percentiles on the converted values (single source of truth).
         """
-        unit = self.metric_unit(metric_type)
+        unit = self.metric_unit(metric_type, distance_unit)
         empty = {
             "metric_type": metric_type,
             "activity_type": activity_type,
@@ -219,9 +232,9 @@ class TrendsService:
         dates = [d for d, _, _ in triples]
         # Convert to display units BEFORE statistics (pace is a non-linear
         # transform, so stats must run on converted values)
-        values = [self.engine.to_display_value(metric_type, v) for _, v, _ in triples]
+        values = [self.engine.to_display_value(metric_type, v, distance_unit) for _, v, _ in triples]
 
-        trend = self.engine.calculate_trend(dates, values, metric_type=metric_type)
+        trend = self.engine.calculate_trend(dates, values, metric_type=metric_type, unit=distance_unit)
         aggregated = self.engine.aggregate_by_period(dates, values, period)
         percentiles = self.engine.calculate_percentiles(dates, values, period=period)
 
@@ -241,10 +254,13 @@ class TrendsService:
             "percentiles": percentiles
         }
 
-    @staticmethod
-    def metric_unit(metric_type: str) -> str:
-        """Display unit label for a metric type."""
-        return METRIC_UNITS.get(metric_type, "")
+    @classmethod
+    def metric_unit(cls, metric_type: str, unit_system: str = "metric") -> str:
+        """Display unit label for a metric type under the given unit system."""
+        base = METRIC_UNITS.get(metric_type, "")
+        if unit_system == "imperial":
+            return IMPERIAL_UNIT_LABELS.get(base, base)
+        return base
 
     def get_multi_metric_trend(
         self,
@@ -255,7 +271,8 @@ class TrendsService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         aggregation: Optional[str] = None,
-        route_id: Optional[int] = None
+        route_id: Optional[int] = None,
+        distance_unit: str = "metric"
     ) -> dict:
         """
         Get trend data for multiple metrics simultaneously
@@ -273,7 +290,8 @@ class TrendsService:
                 start_date=start_date,
                 end_date=end_date,
                 aggregation=aggregation,
-                route_id=route_id
+                route_id=route_id,
+                distance_unit=distance_unit
             )
 
         return {"metrics": results}
@@ -288,7 +306,8 @@ class TrendsService:
         end_date: Optional[datetime] = None,
         period: str = "weekly",
         percentiles: List[int] = [10, 50, 90],
-        route_id: Optional[int] = None
+        route_id: Optional[int] = None,
+        distance_unit: str = "metric"
     ) -> dict:
         """
         Get percentile distribution for a metric over time
@@ -304,14 +323,15 @@ class TrendsService:
             start_date=start_date,
             end_date=end_date,
             aggregation=period,
-            route_id=route_id
+            route_id=route_id,
+            distance_unit=distance_unit
         )
 
         return {
             "metric_type": metric_type,
             "activity_type": activity_type,
             "period": period,
-            "unit": self.metric_unit(metric_type),
+            "unit": self.metric_unit(metric_type, distance_unit),
             "percentiles": percentiles,
             "bands": trend_data.get("percentiles", [])
         }

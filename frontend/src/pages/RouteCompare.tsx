@@ -11,6 +11,8 @@ import {
   loadViewport,
   createViewportSaver,
 } from '../utils/mapViewport'
+import { formatDistance as formatDistanceShared, distanceUnitLabel, type UnitSystem } from '../utils/format'
+import { useUnits } from '../context/units'
 import type { CompareActivity } from '../types'
 
 /** Deterministic palette for activity colors — indexed by the activity's
@@ -41,16 +43,37 @@ function formatDuration(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function formatPace(sPerKm: number | null): string {
+function formatPace(sPerKm: number | null, unit: UnitSystem): string {
   if (sPerKm == null) return '—'
-  const m = Math.floor(sPerKm / 60)
-  const s = Math.round(sPerKm % 60)
-  return `${m}:${String(s).padStart(2, '0')} /km`
+  // s/km -> s/mi is ×1.609344 (km per mile), NOT 1609.344 (meters/mile)
+  const sPerUnit = unit === 'imperial' ? sPerKm * 1.609344 : sPerKm
+  const m = Math.floor(sPerUnit / 60)
+  const s = Math.round(sPerUnit % 60)
+  return `${m}:${String(s).padStart(2, '0')} /${distanceUnitLabel(unit)}`
 }
 
-function formatDistance(meters: number | null): string {
+function formatDistance(meters: number | null, unit: UnitSystem): string {
   if (meters == null) return '—'
-  return `${(meters / 1000).toFixed(2)} km`
+  return formatDistanceShared(meters, unit)
+}
+
+function formatElevationCompare(meters: number | null, unit: UnitSystem): string {
+  if (meters == null) return '—'
+  if (unit === 'imperial') {
+    return `${(meters * 3.280839895013123).toFixed(0)} ft`
+  }
+  return `${meters.toFixed(0)} m`
+}
+
+/** Human label for a split segment length in the user's unit system.
+ *  Splits are computed server-side at fixed meter intervals (1000/800/400);
+ *  imperial renders the equivalent miles. */
+function splitIntervalLabel(meters: number, unit: UnitSystem): string {
+  if (unit === 'imperial') {
+    const miles = meters * 3.280839895013123 / 5280
+    return `${miles.toFixed(miles < 0.3 ? 2 : 2)} mi`
+  }
+  return meters >= 1000 ? `${meters / 1000} km` : `${meters} m`
 }
 
 export default function RouteCompare() {
@@ -73,6 +96,7 @@ export default function RouteCompare() {
   )
 
   const { data: route } = useRoute(routeId)
+  const { unit } = useUnits()
   // Route detail supplies the activity picker list (id/name/date per activity)
   const routeActivities = route?.activities ?? []
 
@@ -391,7 +415,7 @@ export default function RouteCompare() {
                 style={checked ? { backgroundColor: activityColor(ra.id) } : undefined}
               >
                 {new Date(ra.start_date).toLocaleDateString()} ·{' '}
-                {formatDistance(ra.distance)}
+                {formatDistance(ra.distance, unit)}
               </button>
             )
           })}
@@ -484,9 +508,9 @@ export default function RouteCompare() {
                     stroke="#9ca3af"
                     fontSize={12}
                     tick={{ fill: '#6b7280' }}
-                    tickFormatter={(v) => `${((v as number) / 1000).toFixed(1)}`}
+                    tickFormatter={(v) => (unit === 'imperial' ? (((v as number) / 1609.344).toFixed(1)) : (((v as number) / 1000).toFixed(1)))}
                     label={{
-                      value: 'Distance (km)',
+                      value: `Distance (${distanceUnitLabel(unit)})`,
                       position: 'insideBottom',
                       offset: -15,
                       style: { fill: '#6b7280', fontSize: 12 },
@@ -507,7 +531,9 @@ export default function RouteCompare() {
                       return (
                         <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
                           <p className="text-sm font-medium text-gray-900 mb-2">
-                            {((label as number) / 1000).toFixed(2)} km
+                            {unit === 'imperial'
+                              ? `${((label as number) / 1609.344).toFixed(2)} mi`
+                              : `${((label as number) / 1000).toFixed(2)} km`}
                           </p>
                           {payload.map((entry: any) => {
                             const act = compareActivities.find((a) => String(a.id) === entry.dataKey)
@@ -573,7 +599,7 @@ export default function RouteCompare() {
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Splits ({splitInterval >= 1000 ? `${splitInterval / 1000} km` : `${splitInterval} m`})
+                  Splits ({splitIntervalLabel(splitInterval, unit)})
                 </h3>
                 <div className="flex items-center gap-1" role="group" aria-label="Split length">
                   {[1000, 800, 400].map((m) => (
@@ -587,7 +613,7 @@ export default function RouteCompare() {
                           : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
                       }`}
                     >
-                      {m >= 1000 ? `${m / 1000} km` : `${m} m`}
+                      {splitIntervalLabel(m, unit)}
                     </button>
                   ))}
                 </div>
@@ -620,14 +646,14 @@ export default function RouteCompare() {
                               <span className="inline-block px-2 py-0.5 rounded-full bg-green-100 text-green-800 font-semibold">
                                 {formatDuration(cell.seconds)}
                                 <span className="text-green-600 text-xs ml-2">
-                                  {formatPace(cell.pace)}
+                                  {formatPace(cell.pace, unit)}
                                 </span>
                               </span>
                             ) : (
                               <span className="text-gray-600">
                                 {formatDuration(cell.seconds)}
                                 <span className="text-gray-400 text-xs ml-2">
-                                  {formatPace(cell.pace)}
+                                  {formatPace(cell.pace, unit)}
                                 </span>
                               </span>
                             )}
@@ -668,7 +694,7 @@ export default function RouteCompare() {
                     },
                     {
                       label: 'Distance',
-                      get: (a: CompareActivity) => formatDistance(a.summary.distance),
+                      get: (a: CompareActivity) => formatDistance(a.summary.distance, unit),
                     },
                     {
                       label: 'Avg HR',
@@ -676,7 +702,7 @@ export default function RouteCompare() {
                     },
                     {
                       label: 'Elevation gain',
-                      get: (a: CompareActivity) => `${a.summary.total_elevation_gain?.toFixed(0) ?? '—'} m`,
+                      get: (a: CompareActivity) => formatElevationCompare(a.summary.total_elevation_gain, unit),
                     },
                   ].map((metric) => (
                     <tr key={metric.label}>

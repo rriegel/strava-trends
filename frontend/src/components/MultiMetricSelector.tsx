@@ -1,4 +1,5 @@
 import { cn } from '../utils/classnames'
+import { useUnits } from '../context/units'
 
 export interface MetricOption {
   value: string
@@ -6,6 +7,10 @@ export interface MetricOption {
   unit: string
 }
 
+/**
+ * Metric units in the METRIC system. The rendered label adapts to the user's
+ * unit-system preference via unitLabelFor (min/km -> min/mi, m -> ft/mi).
+ */
 export const AVAILABLE_METRICS: MetricOption[] = [
   { value: 'average_speed', label: 'Avg Pace', unit: 'min/km' },
   { value: 'average_heartrate', label: 'Avg Heart Rate', unit: 'bpm' },
@@ -16,6 +21,16 @@ export const AVAILABLE_METRICS: MetricOption[] = [
   { value: 'grade_adjusted_pace', label: 'Grade-Adj Pace', unit: 'min/km' },
   { value: 'heart_rate_drift', label: 'HR Drift', unit: '%' },
 ]
+
+/** Map a metric's base unit label to the unit system's label. */
+export function unitLabelFor(baseUnit: string, unitSystem: 'metric' | 'imperial'): string {
+  if (unitSystem !== 'imperial') return baseUnit
+  switch (baseUnit) {
+    case 'min/km': return 'min/mi'
+    case 'm': return 'ft'
+    default: return baseUnit
+  }
+}
 
 // Consistent color palette for metrics
 export const METRIC_COLORS: Record<string, string> = {
@@ -44,6 +59,7 @@ export default function MultiMetricSelector({
   maxSelections = 3,
   label = 'Metrics',
 }: MultiMetricSelectorProps) {
+  const { unit } = useUnits()
   const toggle = (value: string) => {
     if (selected.includes(value)) {
       // Don't allow deselecting the last metric
@@ -91,7 +107,7 @@ export default function MultiMetricSelector({
               {metric.label}
               {metric.unit && (
                 <span className={cn('ml-1 text-xs', isSelected ? 'opacity-80' : 'text-gray-400')}>
-                  ({metric.unit})
+                  ({unitLabelFor(metric.unit, unit)})
                 </span>
               )}
             </button>

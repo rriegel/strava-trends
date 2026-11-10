@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatPace, formatPaceDecimal, isPaceDisplay, formatDistance, formatDuration, formatElevation, formatHeartrate } from '../format'
+import { formatPace, formatPaceDecimal, isPaceDisplay, formatDistance, formatDuration, formatElevation, formatHeartrate, distanceUnitLabel, elevationUnitLabel } from '../format'
 
 describe('format utilities', () => {
   describe('formatDistance', () => {
@@ -91,6 +91,62 @@ describe('format utilities', () => {
       expect(formatHeartrate(150)).toBe('150 bpm')
       expect(formatHeartrate(150.5)).toBe('151 bpm')
       expect(formatHeartrate(0)).toBe('0 bpm')
+    })
+  })
+
+  describe('unit system (metric/imperial)', () => {
+    describe('formatPace with unit', () => {
+      it('converts m/s to min/mi in imperial', () => {
+        // 3.333333 m/s = 5:00 min/km = 8:02.7 min/mi (5:00 * 1.609344 = 8:04.7 in seconds:
+        // 300 s/km * 1.609344 = 482.8 s/mi = 8:02.8)
+        const imperial = formatPace(3.333333, 'imperial')
+        const secondsPerMi = (1000 / 3.333333) * 1.609344
+        const mins = Math.floor(secondsPerMi / 60)
+        const secs = Math.round(secondsPerMi % 60)
+        expect(imperial).toBe(`${mins}:${String(secs).padStart(2, '0')}`)
+      })
+
+      it('metric default unchanged', () => {
+        expect(formatPace(3.333333, 'metric')).toBe('5:00')
+        expect(formatPace(2.5, 'metric')).toBe('6:40')
+      })
+
+      it('handles zero speed in both systems', () => {
+        expect(formatPace(0, 'imperial')).toBe('--:--')
+        expect(formatPace(0, 'metric')).toBe('--:--')
+      })
+    })
+
+    describe('formatElevation with unit', () => {
+      it('converts meters to feet (imperial)', () => {
+        expect(formatElevation(100, 'imperial')).toBe('328 ft')
+        expect(formatElevation(0, 'imperial')).toBe('0 ft')
+      })
+
+      it('metric default unchanged', () => {
+        expect(formatElevation(100, 'metric')).toBe('100 m')
+        expect(formatElevation(1234.5, 'metric')).toBe('1235 m')
+      })
+    })
+
+    describe('formatDistance with unit', () => {
+      it('2 decimals in both systems (Ryan decision)', () => {
+        expect(formatDistance(8046.72, 'imperial')).toBe('5.00 mi')
+        expect(formatDistance(42195, 'imperial')).toBe('26.22 mi')
+        expect(formatDistance(42195, 'metric')).toBe('42.20 km')
+      })
+    })
+
+    describe('unit labels', () => {
+      it('distance label: km vs mi', () => {
+        expect(distanceUnitLabel('metric')).toBe('km')
+        expect(distanceUnitLabel('imperial')).toBe('mi')
+      })
+
+      it('elevation label: m vs ft', () => {
+        expect(elevationUnitLabel('metric')).toBe('m')
+        expect(elevationUnitLabel('imperial')).toBe('ft')
+      })
     })
   })
 })

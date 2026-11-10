@@ -7,6 +7,7 @@ import RouteCompare from './pages/RouteCompare'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
 import Layout from './components/Layout'
+import { UnitProvider } from './context/units'
 import { getAccessToken } from './api/client'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -21,7 +22,7 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+      <Route element={<ProtectedRoute><UnitProvider><Layout /></UnitProvider></ProtectedRoute>}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/activities" element={<Activities />} />
         <Route path="/trends" element={<Trends />} />

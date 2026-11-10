@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { activitiesApi, type ActivityDetail as ActivityDetailType } from '../api/activities'
-import { formatDistance, formatDuration, formatPace, formatElevation, formatHeartrate } from '../utils/format'
+import { formatDistance, formatDuration, formatPace, formatElevation, formatHeartrate, distanceUnitLabel } from '../utils/format'
+import { useUnits } from '../context/units'
 import ActivityMap from './ActivityMap'
 import EffortBreakdown from './EffortBreakdown'
 
@@ -13,6 +14,7 @@ export default function ActivityDetail({ activityId, onClose }: ActivityDetailPr
   const [activity, setActivity] = useState<ActivityDetailType | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { unit } = useUnits()
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -125,7 +127,7 @@ export default function ActivityDetail({ activityId, onClose }: ActivityDetailPr
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="text-sm text-gray-500">Distance</div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {formatDistance(activity.distance)}
+                  {formatDistance(activity.distance, unit)}
                 </div>
               </div>
             )}
@@ -152,7 +154,7 @@ export default function ActivityDetail({ activityId, onClose }: ActivityDetailPr
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="text-sm text-gray-500">Avg Pace</div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {formatPace(activity.average_speed)}/km
+                  {formatPace(activity.average_speed, unit)}/{distanceUnitLabel(unit)}
                 </div>
               </div>
             )}
@@ -161,7 +163,7 @@ export default function ActivityDetail({ activityId, onClose }: ActivityDetailPr
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="text-sm text-gray-500">Elevation Gain</div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {formatElevation(activity.total_elevation_gain)}
+                  {formatElevation(activity.total_elevation_gain, unit)}
                 </div>
               </div>
             )}

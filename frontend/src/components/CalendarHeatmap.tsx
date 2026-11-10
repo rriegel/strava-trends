@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useCalendar } from '../hooks/useCalendar'
+import { useUnits } from '../context/units'
 import { cn } from '../utils/classnames'
 
 type MetricType = 'distance' | 'count' | 'moving_time'
@@ -16,8 +17,11 @@ const COLORS = {
   moving_time: ['#ebedf0', '#79a8f7', '#4a8af4', '#1f69e3', '#0d47a1'],
 }
 
-function formatValue(value: number, metric: MetricType): string {
+function formatValue(value: number, metric: MetricType, unit: 'metric' | 'imperial'): string {
   if (metric === 'distance') {
+    if (unit === 'imperial') {
+      return `${(value / 1609.344).toFixed(1)} mi`
+    }
     return `${(value / 1000).toFixed(1)} km`
   }
   if (metric === 'moving_time') {
@@ -45,6 +49,7 @@ interface DayData {
 
 export default function CalendarHeatmap() {
   const [metric, setMetric] = useState<MetricType>('distance')
+  const { unit } = useUnits()
   const { data, isLoading, error } = useCalendar({ metric })
 
   // Build a map of date -> data
@@ -269,7 +274,7 @@ export default function CalendarHeatmap() {
                 })}
               </div>
               <div className="text-gray-300">
-                {formatValue(hoveredDay.value, metric)}
+                {formatValue(hoveredDay.value, metric, unit)}
                 {hoveredDay.count > 0 && ` • ${hoveredDay.count} activit${hoveredDay.count === 1 ? 'y' : 'ies'}`}
               </div>
             </div>
