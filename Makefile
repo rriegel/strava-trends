@@ -23,8 +23,8 @@ setup:
 		if [ -d .venv ]; then \
 			echo "  .venv already exists"; \
 		elif command -v uv >/dev/null 2>&1; then \
-			echo "  creating venv with uv..."; \
-			uv venv .venv && \
+			echo "  creating venv with uv (pinned to 3.13 — 3.14 has no scipy 1.14.1 wheel)..."; \
+			uv venv --python 3.13 .venv && \
 			uv pip install --python .venv/bin/python -q -r requirements.txt; \
 		else \
 			echo "  creating venv with python3..."; \
@@ -165,21 +165,39 @@ reset-activities:
 		"TRUNCATE effort_groups, computed_metrics, activity_streams, routes, route_clusters, activities RESTART IDENTITY CASCADE;"
 	@echo "Activity data wiped. Re-upload files to rebuild (routes + streams are derived on upload)."
 
-# Start backend
+# Start backend (cold start after fresh setup can take >10s — bytecode compile)
 backend: migrate seed-dev
 	@echo "Starting backend..."
 	@cd backend && . .venv/bin/activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000 > /tmp/strava-trends-backend.log 2>&1 &
 	@echo "Backend starting on port 8000 (logs: /tmp/strava-trends-backend.log)..."
-	@sleep 3
-	@ss -tlnp 2>/dev/null | grep ':8000 ' > /dev/null && echo "Backend is running" || (echo "Backend failed to start. Check /tmp/strava-trends-backend.log" && exit 1)
+	@ok=0; \
+	for i in $$(seq 1 30); do \
+		if curl -sf -m 1 http://localhost:8000/health >/dev/null 2>&1; then ok=1; break; fi; \
+		sleep 1; \
+	done; \
+	if [ "$$ok" != "1" ]; then \
+		echo "Backend failed to start after 30s. Last log lines:"; \
+		tail -n 20 /tmp/strava-trends-backend.log; \
+		exit 1; \
+	fi; \
+	echo "Backend is running (http://localhost:8000)" 
 
-# Start frontend
+# Start frontend (vite cold start can exceed 3s)
 frontend:
 	@echo "Starting frontend..."
 	@cd frontend && npm run dev > /tmp/strava-trends-frontend.log 2>&1 &
 	@echo "Frontend starting on port 3001 (logs: /tmp/strava-trends-frontend.log)..."
-	@sleep 3
-	@ss -tlnp 2>/dev/null | grep ':3001 ' > /dev/null && echo "Frontend is running" || (echo "Frontend failed to start. Check /tmp/strava-trends-frontend.log" && exit 1)
+	@ok=0; \
+	for i in $$(seq 1 30); do \
+		if curl -sf -m 1 http://localhost:3001/ >/dev/null 2>&1; then ok=1; break; fi; \
+		sleep 1; \
+	done; \
+	if [ "$$ok" != "1" ]; then \
+		echo "Frontend failed to start after 30s. Last log lines:"; \
+		tail -n 20 /tmp/strava-trends-frontend.log; \
+		exit 1; \
+	fi; \
+	echo "Frontend is running (http://localhost:3001)" 
 
 # Run tests (uses test database)
 test: db-test db-test-ready

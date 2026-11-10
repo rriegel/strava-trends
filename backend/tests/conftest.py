@@ -14,6 +14,7 @@ from database import Base, get_db
 from main import app
 from models.user import User
 from models.activity import Activity
+from utils.security import create_access_token
 
 
 # Use PostgreSQL test database
@@ -39,6 +40,7 @@ def db_session():
         conn.execute(text("DROP TABLE IF EXISTS route_clusters CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS routes CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS activity_streams CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS refresh_tokens CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS sync_states CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS activities CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
@@ -59,6 +61,7 @@ def db_session():
             conn.execute(text("DROP TABLE IF EXISTS route_clusters CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS routes CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS activity_streams CASCADE"))
+            conn.execute(text("DROP TABLE IF EXISTS refresh_tokens CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS sync_states CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS activities CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
@@ -113,6 +116,13 @@ def sample_user(db_session):
     db_session.commit()
     db_session.refresh(user)
     return user
+
+
+@pytest.fixture
+def auth_headers(sample_user):
+    """Real JWT Authorization header for sample_user (replaces forgeable session_ tokens)."""
+    token = create_access_token(sample_user.id, sample_user.token_version or 0)
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture

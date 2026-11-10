@@ -11,9 +11,9 @@ from services.analytics_engine import AnalyticsEngine
 class TestTrendsEndpoint:
     """Test /trends/metrics endpoint"""
     
-    def test_get_metric_trend_no_data(self, client, sample_user):
+    def test_get_metric_trend_no_data(self, client, sample_user, auth_headers):
         """Test trend endpoint with no activities"""
-        response = client.get("/trends/metrics?metric_type=average_speed")
+        response = client.get("/trends/metrics?metric_type=average_speed", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -24,7 +24,7 @@ class TestTrendsEndpoint:
         assert data["trend"]["slope"] == 0
         assert data["trend"]["direction"] == "stable"
     
-    def test_get_metric_trend_with_activities(self, client, db_session, sample_user):
+    def test_get_metric_trend_with_activities(self, client, db_session, sample_user, auth_headers):
         """Test trend endpoint with activity data"""
         # Create 5 activities with increasing speed over time
         for i in range(5):
@@ -47,7 +47,7 @@ class TestTrendsEndpoint:
         
         db_session.commit()
         
-        response = client.get("/trends/metrics?metric_type=average_speed")
+        response = client.get("/trends/metrics?metric_type=average_speed", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -63,7 +63,7 @@ class TestTrendsEndpoint:
         first_pace = AnalyticsEngine.speed_to_pace(2.5)
         assert data["data_points"][0]["value"] == pytest.approx(first_pace)
     
-    def test_get_metric_trend_with_filters(self, client, db_session, sample_user):
+    def test_get_metric_trend_with_filters(self, client, db_session, sample_user, auth_headers):
         """Test trend endpoint with activity type filter"""
         # Create runs and rides
         for i in range(3):
@@ -98,7 +98,7 @@ class TestTrendsEndpoint:
         db_session.commit()
         
         # Filter by Run type
-        response = client.get("/trends/metrics?metric_type=average_speed&activity_type=Run")
+        response = client.get("/trends/metrics?metric_type=average_speed&activity_type=Run", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -109,7 +109,7 @@ class TestTrendsEndpoint:
         for point in data["data_points"]:
             assert point["value"] == pytest.approx(expected_pace)
     
-    def test_get_metric_trend_with_date_range(self, client, db_session, sample_user):
+    def test_get_metric_trend_with_date_range(self, client, db_session, sample_user, auth_headers):
         """Test trend endpoint with date range filter"""
         # Create activities spanning 3 months
         for i in range(9):
@@ -133,7 +133,8 @@ class TestTrendsEndpoint:
         response = client.get(
             "/trends/metrics?metric_type=average_speed"
             "&start_date=2024-02-01T00:00:00"
-            "&end_date=2024-02-29T23:59:59"
+            "&end_date=2024-02-29T23:59:59",
+            headers=auth_headers,
         )
         
         assert response.status_code == 200
@@ -145,7 +146,7 @@ class TestTrendsEndpoint:
             date = datetime.fromisoformat(point["date"])
             assert date.month == 2
     
-    def test_get_metric_trend_with_distance_bucket(self, client, db_session, sample_user):
+    def test_get_metric_trend_with_distance_bucket(self, client, db_session, sample_user, auth_headers):
         """Test trend endpoint with distance bucket filter"""
         # Create 5K and 10K activities
         for i in range(3):
@@ -182,7 +183,7 @@ class TestTrendsEndpoint:
         db_session.commit()
         
         # Filter by 5K bucket
-        response = client.get("/trends/metrics?metric_type=average_speed&distance_bucket=5K")
+        response = client.get("/trends/metrics?metric_type=average_speed&distance_bucket=5K", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -193,7 +194,7 @@ class TestTrendsEndpoint:
         for point in data["data_points"]:
             assert point["value"] == pytest.approx(expected_pace)
     
-    def test_get_metric_trend_with_aggregation(self, client, db_session, sample_user):
+    def test_get_metric_trend_with_aggregation(self, client, db_session, sample_user, auth_headers):
         """Test trend endpoint with weekly aggregation"""
         # Create multiple activities per week
         for week in range(3):
@@ -214,7 +215,7 @@ class TestTrendsEndpoint:
         
         db_session.commit()
         
-        response = client.get("/trends/metrics?metric_type=average_speed&aggregation=weekly")
+        response = client.get("/trends/metrics?metric_type=average_speed&aggregation=weekly", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -229,7 +230,7 @@ class TestTrendsEndpoint:
             assert "max" in period
             assert "count" in period
     
-    def test_get_metric_trend_computed_metric(self, client, db_session, sample_user):
+    def test_get_metric_trend_computed_metric(self, client, db_session, sample_user, auth_headers):
         """Test trend for computed metrics like hr_pace_ratio"""
         # Create activities
         for i in range(5):
@@ -261,7 +262,7 @@ class TestTrendsEndpoint:
         
         db_session.commit()
         
-        response = client.get("/trends/metrics?metric_type=hr_pace_ratio")
+        response = client.get("/trends/metrics?metric_type=hr_pace_ratio", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -274,7 +275,7 @@ class TestTrendsEndpoint:
 class TestMultiMetricTrend:
     """Test /trends/metrics/multi endpoint"""
     
-    def test_get_multi_metric_trend(self, client, db_session, sample_user):
+    def test_get_multi_metric_trend(self, client, db_session, sample_user, auth_headers):
         """Test multi-metric trend endpoint"""
         # Create activities
         for i in range(5):
@@ -296,7 +297,7 @@ class TestMultiMetricTrend:
         
         db_session.commit()
         
-        response = client.get("/trends/metrics/multi?metric_types=average_speed,average_heartrate")
+        response = client.get("/trends/metrics/multi?metric_types=average_speed,average_heartrate", headers=auth_headers)
         
         assert response.status_code == 200
         data = response.json()
@@ -308,12 +309,12 @@ class TestMultiMetricTrend:
         assert len(data["metrics"]["average_speed"]["data_points"]) == 5
         assert len(data["metrics"]["average_heartrate"]["data_points"]) == 5
 
-    def test_get_multi_metric_trend_route_filter(self, client, db_session, sample_user):
+    def test_get_multi_metric_trend_route_filter(self, client, db_session, sample_user, auth_headers):
         """route_id filter limits data points to activities on that route"""
         from models.route import Route
 
-        route_a = Route(name="River Loop", polyline="a", polyline_hash="hash_a", distance=5000.0, activity_count=0)
-        route_b = Route(name="Hill Route", polyline="b", polyline_hash="hash_b", activity_count=0)
+        route_a = Route(user_id=sample_user.id, name="River Loop", polyline="a", polyline_hash="hash_a", distance=5000.0, activity_count=0)
+        route_b = Route(user_id=sample_user.id, name="Hill Route", polyline="b", polyline_hash="hash_b", activity_count=0)
         db_session.add_all([route_a, route_b])
         db_session.commit()
 
@@ -336,14 +337,14 @@ class TestMultiMetricTrend:
 
         db_session.commit()
 
-        response = client.get(f"/trends/metrics/multi?metric_types=average_speed&route_id={route_a.id}")
+        response = client.get(f"/trends/metrics/multi?metric_types=average_speed&route_id={route_a.id}", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
         assert len(data["metrics"]["average_speed"]["data_points"]) == 3
 
         # Other route still returns its own data
-        response = client.get(f"/trends/metrics/multi?metric_types=average_speed&route_id={route_b.id}")
+        response = client.get(f"/trends/metrics/multi?metric_types=average_speed&route_id={route_b.id}", headers=auth_headers)
         assert response.status_code == 200
         assert len(response.json()["metrics"]["average_speed"]["data_points"]) == 2
 
@@ -351,7 +352,7 @@ class TestMultiMetricTrend:
 class TestPercentileBands:
     """Test /trends/percentiles endpoint"""
     
-    def test_get_percentile_bands(self, client, db_session, sample_user):
+    def test_get_percentile_bands(self, client, db_session, sample_user, auth_headers):
         """Test percentile bands endpoint"""
         # Create activities with varying speeds
         for i in range(20):
@@ -375,7 +376,8 @@ class TestPercentileBands:
         response = client.get(
             "/trends/percentiles?metric_type=average_speed"
             "&activity_type=Run"
-            "&percentiles=10,50,90"
+            "&percentiles=10,50,90",
+            headers=auth_headers,
         )
         
         assert response.status_code == 200

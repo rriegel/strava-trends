@@ -8,22 +8,22 @@ from datetime import datetime
 class TestActivitiesRouter:
     """Test /activities endpoints"""
     
-    def test_list_activities_empty(self, client, sample_user):
+    def test_list_activities_empty(self, client, sample_user, auth_headers):
         """Test listing activities when none exist"""
         response = client.get(
             "/activities/",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()
         assert data["activities"] == []
         assert data["pagination"]["total"] == 0
     
-    def test_list_activities_with_data(self, client, sample_activity):
+    def test_list_activities_with_data(self, client, sample_activity, auth_headers):
         """Test listing activities with data"""
         response = client.get(
             "/activities/",
-            headers={"Authorization": f"Bearer session_{sample_activity.user_id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()
@@ -31,11 +31,11 @@ class TestActivitiesRouter:
         assert data["activities"][0]["name"] == "Morning Run"
         assert data["activities"][0]["distance"] == 5000.0
     
-    def test_list_activities_filter_by_type(self, client, sample_activity):
+    def test_list_activities_filter_by_type(self, client, sample_activity, auth_headers):
         """Test filtering activities by type"""
         response = client.get(
             "/activities/?type=Run",
-            headers={"Authorization": f"Bearer session_{sample_activity.user_id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()
@@ -43,12 +43,12 @@ class TestActivitiesRouter:
         
         response = client.get(
             "/activities/?type=Ride",
-            headers={"Authorization": f"Bearer session_{sample_activity.user_id}_1234567890"}
+            headers=auth_headers
         )
         data = response.json()
         assert len(data["activities"]) == 0
     
-    def test_list_activities_pagination(self, client, db_session, sample_user):
+    def test_list_activities_pagination(self, client, db_session, sample_user, auth_headers):
         """Test pagination of activities"""
         from models.activity import Activity
         
@@ -70,7 +70,7 @@ class TestActivitiesRouter:
         
         response = client.get(
             "/activities/?per_page=5&page=1",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()
@@ -78,11 +78,11 @@ class TestActivitiesRouter:
         assert data["pagination"]["total"] == 10
         assert data["pagination"]["total_pages"] == 2
     
-    def test_get_activity_detail(self, client, sample_activity):
+    def test_get_activity_detail(self, client, sample_activity, auth_headers):
         """Test getting activity detail"""
         response = client.get(
             f"/activities/{sample_activity.id}",
-            headers={"Authorization": f"Bearer session_{sample_activity.user_id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()
@@ -90,21 +90,21 @@ class TestActivitiesRouter:
         assert data["distance"] == 5000.0
         assert data["average_heartrate"] == 150.0
     
-    def test_get_activity_not_found(self, client, sample_user):
+    def test_get_activity_not_found(self, client, sample_user, auth_headers):
         """Test getting non-existent activity"""
         response = client.get(
             "/activities/99999",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 404
 
 
 
-    def test_delete_activity(self, client, sample_activity):
+    def test_delete_activity(self, client, sample_activity, auth_headers):
         """Test deleting an activity"""
         response = client.delete(
             f"/activities/{sample_activity.id}",
-            headers={"Authorization": f"Bearer session_{sample_activity.user_id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         assert response.json()["message"] == "Activity deleted successfully"
@@ -112,15 +112,15 @@ class TestActivitiesRouter:
         # Verify it's gone
         response = client.get(
             f"/activities/{sample_activity.id}",
-            headers={"Authorization": f"Bearer session_{sample_activity.user_id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 404
     
-    def test_delete_activity_not_found(self, client, sample_user):
+    def test_delete_activity_not_found(self, client, sample_user, auth_headers):
         """Test deleting non-existent activity"""
         response = client.delete(
             "/activities/99999",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 404
 
@@ -128,24 +128,24 @@ class TestActivitiesRouter:
 class TestUploadsRouter:
     """Test /uploads endpoints"""
     
-    def test_upload_unsupported_format(self, client, sample_user):
+    def test_upload_unsupported_format(self, client, sample_user, auth_headers):
         """Test uploading unsupported file format"""
         response = client.post(
             "/uploads/",
             files={"file": ("test.csv", b"fake content", "text/csv")},
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 400
         assert "Unsupported file format" in response.json()["detail"]
     
-    def test_upload_file_too_large(self, client, sample_user):
+    def test_upload_file_too_large(self, client, sample_user, auth_headers):
         """Test uploading file larger than 50MB"""
         # Create a fake 60MB file
         large_content = b"x" * (60 * 1024 * 1024)
         response = client.post(
             "/uploads/",
             files={"file": ("large.fit", large_content, "application/octet-stream")},
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 413
         assert "too large" in response.json()["detail"].lower()
@@ -184,7 +184,9 @@ class TestAuthRouter:
         assert response.status_code == 200
         data = response.json()
         assert "access_token" in data
-        assert data["user"]["strava_athlete_id"] == 123456789
+        # v2 token model: response carries access_token + refresh_token, no user object
+        assert "refresh_token" in data
+        assert data["access_token"].count(".") == 2  # real JWT
     
     def test_strava_callback_updates_existing_user(self, client, db_session, sample_user, mock_strava_api, mocker):
         """Test Strava OAuth callback updates existing user"""
@@ -222,29 +224,29 @@ class TestAuthRouter:
 class TestTrendsRouter:
     """Test /trends endpoints"""
     
-    def test_get_metric_trend_stub(self, client, sample_user):
+    def test_get_metric_trend_stub(self, client, sample_user, auth_headers):
         """Test metric trend endpoint (currently stubbed)"""
         response = client.get(
             "/trends/metrics?metric_type=average_speed",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()
         assert data["metric_type"] == "average_speed"
         assert data["data_points"] == []
     
-    def test_get_percentile_bands_stub(self, client, sample_user):
+    def test_get_percentile_bands_stub(self, client, sample_user, auth_headers):
         """Test percentile bands endpoint (currently stubbed)"""
         response = client.get(
             "/trends/percentiles?metric_type=average_speed&activity_type=Run",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()
         assert data["metric_type"] == "average_speed"
         assert data["bands"] == []
 
-    def test_get_activity_detail_includes_has_streams(self, client, db_session, sample_user):
+    def test_get_activity_detail_includes_has_streams(self, client, db_session, sample_user, auth_headers):
         """Test that activity detail response includes has_streams field"""
         from models.activity import Activity
         from datetime import datetime, timezone
@@ -265,14 +267,14 @@ class TestTrendsRouter:
         
         response = client.get(
             f"/activities/{activity.id}",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()
         assert "has_streams" in data
         assert data["has_streams"] is True
 
-    def test_get_activity_streams(self, client, db_session, sample_user):
+    def test_get_activity_streams(self, client, db_session, sample_user, auth_headers):
         """Test getting activity streams endpoint"""
         from models.activity import Activity
         from models.activity_stream import ActivityStream
@@ -301,7 +303,7 @@ class TestTrendsRouter:
         
         response = client.get(
             f"/activities/{activity.id}/streams",
-            headers={"Authorization": f"Bearer session_{sample_user.id}_1234567890"}
+            headers=auth_headers
         )
         assert response.status_code == 200
         data = response.json()

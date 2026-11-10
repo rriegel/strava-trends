@@ -1,21 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { garminSyncApi, type GarminSyncReport, type GarminSyncStatus } from '../api/garminSync'
+import { ACTIVITY_DATA_INVALIDATED_KEYS } from '../api/queryKeys'
 
 /**
  * Query families derived from synced activities — mirrors
- * UPLOAD_INVALIDATED_KEYS in useFileUpload.ts. A sync inserts activities
+ * ACTIVITY_DATA_INVALIDATED_KEYS (api/queryKeys.ts). A sync inserts activities
  * (with streams/routes), so every aggregate over activities must refetch.
  */
-const SYNC_INVALIDATED_KEYS = [
-  'activities',
-  'routes',
-  'route',
-  'route-compare',
-  'calendar',
-  'multi-trend',
-  'percentile-bands',
-  'currentUser',
-] as const
 
 export function useGarminSyncStatus() {
   return useQuery<GarminSyncStatus>({
@@ -42,7 +33,7 @@ export function useGarminSync(): UseGarminSyncResult {
       if (report.synced > 0) {
         // Only invalidate when something actually imported — a skipped-only
         // sync changed no data (duplicates are data-preserving by design).
-        for (const key of SYNC_INVALIDATED_KEYS) {
+        for (const key of ACTIVITY_DATA_INVALIDATED_KEYS) {
           queryClient.invalidateQueries({ queryKey: [key] })
         }
       }

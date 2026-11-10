@@ -37,8 +37,8 @@ def _days_ago(n: int, hour: int = 8) -> datetime:
 class TestCalendarEndpoint:
     """Test /activities/calendar heatmap + summary"""
 
-    def test_empty_calendar(self, client, sample_user):
-        response = client.get("/activities/calendar")
+    def test_empty_calendar(self, client, sample_user, auth_headers):
+        response = client.get("/activities/calendar", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["data"] == []
@@ -47,7 +47,7 @@ class TestCalendarEndpoint:
         assert data["summary"]["longest_streak"] == 0
         assert data["summary"]["most_active_day"] == ""
 
-    def test_summary_totals(self, client, db_session, sample_user):
+    def test_summary_totals(self, client, db_session, sample_user, auth_headers):
         base = _days_ago(2)
         # 3 activities on one day + 1 on the next
         _add_activity(db_session, sample_user.id, base, distance=5000, moving_time=1800)
@@ -56,7 +56,7 @@ class TestCalendarEndpoint:
         _add_activity(db_session, sample_user.id, base + timedelta(days=1), distance=10000, moving_time=3600)
         db_session.commit()
 
-        response = client.get("/activities/calendar")
+        response = client.get("/activities/calendar", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
 
@@ -69,25 +69,26 @@ class TestCalendarEndpoint:
         # Day 1 has 3 activities vs 1 on day 2
         assert summary["most_active_day"] == base.strftime("%A")
 
-    def test_longest_streak_with_gaps(self, client, db_session, sample_user):
+    def test_longest_streak_with_gaps(self, client, db_session, sample_user, auth_headers):
         # Streak of 3 days, gap, then streak of 2 — all within the default window
         base = _days_ago(6)
         for offset in (0, 1, 2, 5, 6):
             _add_activity(db_session, sample_user.id, base + timedelta(days=offset))
         db_session.commit()
 
-        response = client.get("/activities/calendar")
+        response = client.get("/activities/calendar", headers=auth_headers)
         data = response.json()
         assert data["summary"]["longest_streak"] == 3
 
-    def test_summary_respects_date_range(self, client, db_session, sample_user):
+    def test_summary_respects_date_range(self, client, db_session, sample_user, auth_headers):
         base = datetime(2024, 6, 1, 8, 0, 0)
         _add_activity(db_session, sample_user.id, base)
         _add_activity(db_session, sample_user.id, base + timedelta(days=30))
         db_session.commit()
 
         response = client.get(
-            "/activities/calendar?start_date=2024-06-01T00:00:00&end_date=2024-06-05T23:59:59"
+            "/activities/calendar?start_date=2024-06-01T00:00:00&end_date=2024-06-05T23:59:59",
+            headers=auth_headers,
         )
         data = response.json()
         assert data["summary"]["total_activities"] == 1

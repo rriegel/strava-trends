@@ -1,17 +1,29 @@
 import apiClient from './client'
 import type { User } from '../types'
 
+/** TokenResponse from the backend. access_token = 15-min JWT; refresh_token = opaque, 30-day, rotated on every refresh. */
 export interface AuthResponse {
   access_token: string
   token_type: string
   expires_in: number
-  user: {
-    id: number
-    username: string
-    firstname: string
-    lastname: string
-    email: string | null
-  }
+  refresh_token: string
+}
+
+export async function register(email: string, password: string): Promise<AuthResponse> {
+  const response = await apiClient.post('/auth/register', { email, password })
+  return response.data
+}
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  const response = await apiClient.post('/auth/login', { email, password })
+  return response.data
+}
+
+export async function logout(refreshToken: string): Promise<void> {
+  // Server-side revocation of the refresh token. 401/error is fine — the
+  // interceptor is exempt from refresh on /auth/logout, and the client clears
+  // tokens either way.
+  await apiClient.post('/auth/logout', { refresh_token: refreshToken })
 }
 
 export async function getCurrentUser(): Promise<User> {
@@ -26,10 +38,5 @@ export async function updateUser(data: Partial<User>): Promise<User> {
 
 export async function syncActivities(): Promise<{ status: string; message: string }> {
   const response = await apiClient.post('/users/me/sync')
-  return response.data
-}
-
-export async function devLogin(): Promise<AuthResponse> {
-  const response = await apiClient.get<AuthResponse>('/auth/dev-login')
   return response.data
 }

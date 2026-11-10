@@ -7,6 +7,8 @@ from models.route import Route
 from models.route_cluster import RouteCluster
 from models.activity import Activity
 from models.activity_stream import ActivityStream
+from models.user import User
+from routers.auth import get_current_user
 from services.route_comparison import (
     compute_race_curve,
     compute_splits,
@@ -26,25 +28,26 @@ async def list_routes(
     radius_km: Optional[float] = None,
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List routes with filtering and sorting"""
-    query = db.query(Route)
-    
+    """List routes with filtering and sorting (per-user)."""
+    query = db.query(Route).filter(Route.user_id == current_user.id)
+
     if min_activity_count:
         query = query.filter(Route.activity_count >= min_activity_count)
-    
+
     # TODO: Implement spatial filtering with bounding box or radius
-    
+
     sort_column = getattr(Route, sort_by, Route.activity_count)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
-    
+
     total = query.count()
     routes = query.offset((page - 1) * per_page).limit(per_page).all()
-    
+
     return {
         "routes": [
             {
@@ -69,14 +72,24 @@ async def list_routes(
     }
 
 @router.get("/{route_id}")
-async def get_route(route_id: int, db: Session = Depends(get_db)):
+async def get_route(
+    route_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Get route details with activities"""
-    route = db.query(Route).filter(Route.id == route_id).first()
+    route = db.query(Route).filter(
+        Route.id == route_id,
+        Route.user_id == current_user.id,
+    ).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
-    
-    activities = db.query(Activity).filter(Activity.route_id == route_id).all()
-    
+
+    activities = db.query(Activity).filter(
+        Activity.route_id == route_id,
+        Activity.user_id == current_user.id,
+    ).all()
+
     return {
         "id": route.id,
         "name": route.name,
@@ -173,6 +186,7 @@ async def compare_route_activities(
         le=5000.0,
         description="Split segment length in meters (1000 = 1 km, 800, 400, ...)",
     ),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Compare 2-5 activities on one route: GPS overlay, race plot, splits.
@@ -182,7 +196,10 @@ async def compare_route_activities(
     Activities without them (or run in reverse) still contribute their
     GPS track and summary.
     """
-    route = db.query(Route).filter(Route.id == route_id).first()
+    route = db.query(Route).filter(
+        Route.id == route_id,
+        Route.user_id == current_user.id,
+    ).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
@@ -200,7 +217,11 @@ async def compare_route_activities(
 
     activities = (
         db.query(Activity)
-        .filter(Activity.id.in_(ids), Activity.route_id == route_id)
+        .filter(
+            Activity.id.in_(ids),
+            Activity.route_id == route_id,
+            Activity.user_id == current_user.id,
+        )
         .all()
     )
     found_ids = {a.id for a in activities}
@@ -250,6 +271,7 @@ class RouteRenameRequest(BaseModel):
 async def rename_route(
     route_id: int,
     payload: RouteRenameRequest,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Rename a route (user-facing label; does not affect matching)"""
@@ -258,7 +280,10 @@ async def rename_route(
     if not name:
         raise HTTPException(status_code=422, detail="Route name cannot be empty")
 
-    route = db.query(Route).filter(Route.id == route_id).first()
+    route = db.query(Route).filter(
+        Route.id == route_id,
+        Route.user_id == current_user.id,
+    ).first()
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
@@ -280,14 +305,24 @@ async def rename_route(
 
 
 @router.get("/clusters/{cluster_id}")
-async def get_route_cluster(cluster_id: int, db: Session = Depends(get_db)):
-    """Get route cluster details"""
-    cluster = db.query(RouteCluster).filter(RouteCluster.id == cluster_id).first()
+async def get_route_cluster(
+    cluster_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get route cluster details (per-user)."""
+    cluster = db.query(RouteCluster).filter(
+        RouteCluster.id == cluster_id,
+        RouteCluster.user_id == current_user.id,
+    ).first()
     if not cluster:
         raise HTTPException(status_code=404, detail="Cluster not found")
-    
-    routes = db.query(Route).filter(Route.cluster_id == cluster_id).all()
-    
+
+    routes = db.query(Route).filter(
+        Route.cluster_id == cluster_id,
+        Route.user_id == current_user.id,
+    ).all()
+
     return {
         "id": cluster.id,
         "centroid_route_id": cluster.centroid_route_id,
