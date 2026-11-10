@@ -11,7 +11,10 @@
 
 export type UnitSystem = 'metric' | 'imperial'
 
-const M_PER_MI = 1609.344
+const M_PER_MI = 1609.344 // meters per mile — for meter-quantity conversions (distance)
+// NOTE pace: min/mi = (M_PER_MI meters) / (speed m/s) / 60 — meters cancel to
+// seconds-per-mile, so the 1609.344 factor IS correct there. Do not "fix" it
+// to 1.609344 (that's the km-per-mile factor for converting min/km values).
 const FT_PER_M = 3.280839895013123 // exact: 1 ft = 0.3048 m
 
 /**

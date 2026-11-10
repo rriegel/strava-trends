@@ -254,20 +254,20 @@ class TestAvailableMetrics:
 class TestImperialUnitConversion:
     """Imperial display conversion: pace min/mi, elevation ft"""
 
-    M_PER_MI = 1609.344
+    KM_PER_MI = 1.609344
 
     # --- AnalyticsEngine.to_display_value ---
 
     def test_pace_metric_imperial_is_min_per_mile(self):
         # 2.78 m/s = 5.995 min/km -> ×1.609344 = 9.649 min/mi
         metric = AnalyticsEngine.to_display_value("average_speed", 2.78, "imperial")
-        expected = AnalyticsEngine.speed_to_pace(2.78) * self.M_PER_MI
+        expected = AnalyticsEngine.speed_to_pace(2.78) * self.KM_PER_MI
         assert abs(metric - expected) < 1e-9
 
     def test_gap_computed_metric_imperial_is_min_per_mile(self):
         # grade_adjusted_pace arrives already in min/km; imperial just scales
         assert abs(
-            AnalyticsEngine.to_display_value("grade_adjusted_pace", 5.5, "imperial") - 5.5 * self.M_PER_MI
+            AnalyticsEngine.to_display_value("grade_adjusted_pace", 5.5, "imperial") - 5.5 * self.KM_PER_MI
         ) < 1e-9
 
     def test_pace_metric_metric_unchanged(self):
@@ -300,7 +300,7 @@ class TestImperialUnitConversion:
     # --- direction_threshold ---
 
     def test_pace_threshold_scales_with_imperial(self):
-        assert abs(AnalyticsEngine.direction_threshold("average_speed", "imperial") - 0.005 * self.M_PER_MI) < 1e-9
+        assert abs(AnalyticsEngine.direction_threshold("average_speed", "imperial") - 0.005 * self.KM_PER_MI) < 1e-9
 
     def test_hr_threshold_unchanged_in_imperial(self):
         assert AnalyticsEngine.direction_threshold("average_heartrate", "imperial") == 0.1
@@ -335,7 +335,7 @@ class TestImperialUnitConversion:
             user_id=sample_user.id, metric_type="average_speed", distance_unit="imperial"
         )
         assert result["unit"] == "min/mi"
-        expected = AnalyticsEngine.speed_to_pace(2.78) * self.M_PER_MI
+        expected = AnalyticsEngine.speed_to_pace(2.78) * self.KM_PER_MI
         for point in result["data_points"]:
             assert abs(point["value"] - expected) < 0.001
         for agg in result["aggregated_data"]:
@@ -391,7 +391,7 @@ class TestImperialUnitConversion:
             user_id=sample_user.id, metric_type="average_speed", activity_type="Run", distance_unit="imperial"
         )
         assert result["unit"] == "min/mi"
-        expected = AnalyticsEngine.speed_to_pace(2.78) * self.M_PER_MI
+        expected = AnalyticsEngine.speed_to_pace(2.78) * self.KM_PER_MI
         for band in result["bands"]:
             assert abs(band["p50"] - expected) < 0.001
 

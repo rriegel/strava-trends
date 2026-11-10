@@ -45,7 +45,8 @@ function formatDuration(seconds: number): string {
 
 function formatPace(sPerKm: number | null, unit: UnitSystem): string {
   if (sPerKm == null) return '—'
-  const sPerUnit = unit === 'imperial' ? sPerKm * 1609.344 : sPerKm
+  // s/km -> s/mi is ×1.609344 (km per mile), NOT 1609.344 (meters/mile)
+  const sPerUnit = unit === 'imperial' ? sPerKm * 1.609344 : sPerKm
   const m = Math.floor(sPerUnit / 60)
   const s = Math.round(sPerUnit % 60)
   return `${m}:${String(s).padStart(2, '0')} /${distanceUnitLabel(unit)}`

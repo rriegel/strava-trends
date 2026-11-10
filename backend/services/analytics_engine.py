@@ -18,7 +18,8 @@ class AnalyticsEngine:
     # Elevation gain stored in meters, displayed as m or ft
     ELEVATION_METRICS = {"total_elevation_gain"}
 
-    M_PER_MI = 1609.344
+    M_PER_MI = 1609.344   # meters per mile — for converting meter quantities to miles
+    KM_PER_MI = 1.609344  # km per mile — for converting min/km pace to min/mi
     FT_PER_M = 3.280839895013123  # exact: 1 ft = 0.3048 m
 
     @staticmethod
@@ -51,7 +52,9 @@ class AnalyticsEngine:
         elif metric_type in cls.ELEVATION_METRICS and unit == "imperial":
             display = display * cls.FT_PER_M
         if unit == "imperial" and (metric_type in cls.SPEED_METRICS or metric_type in cls.PACE_METRICS):
-            display = display * cls.M_PER_MI
+            # min/km -> min/mi is a factor of 1.609344 (km per mile), NOT
+            # 1609.344 (meters per mile) — the latter inflates pace 1000×.
+            display = display * cls.KM_PER_MI
         return display
     
     @classmethod
@@ -66,7 +69,7 @@ class AnalyticsEngine:
         """
         if metric_type in cls.SPEED_METRICS or metric_type in cls.PACE_METRICS:
             threshold = 0.005   # min/km per day (~3s/km per week)
-            return threshold * cls.M_PER_MI if unit == "imperial" else threshold
+            return threshold * cls.KM_PER_MI if unit == "imperial" else threshold
         if metric_type == "average_heartrate":
             return 0.1     # bpm per day
         if metric_type == "average_cadence":
