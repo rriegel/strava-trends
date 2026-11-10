@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
+import apiClient from '../api/client'
 
 interface ActivityMapProps {
   activityId: number
@@ -34,13 +35,17 @@ export default function ActivityMap({ activityId, hasStreams }: ActivityMapProps
       return
     }
 
-    // Fetch streams first to get route coordinates
+    // Fetch streams first to get route coordinates.
+    // Must go through apiClient: streams require auth, and this is the only
+    // call in the app that was raw-fetch()ing without the Authorization
+    // header (surfaced as 401 after the auth-v2 enforcement merge).
     const loadRoute = async () => {
       try {
-        const response = await fetch(`/api/activities/${activityId}/streams?stream_types=latlng`)
-        if (!response.ok) throw new Error('Failed to load route data')
-        
-        const data = await response.json()
+        const response = await apiClient.get(`/activities/${activityId}/streams`, {
+          params: { stream_types: 'latlng' },
+        })
+
+        const data = response.data
         const latlngStream: StreamData | undefined = data.streams?.latlng
         
         if (!latlngStream || !latlngStream.data || latlngStream.data.length === 0) {
